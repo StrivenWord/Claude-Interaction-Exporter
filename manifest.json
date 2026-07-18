@@ -1,8 +1,9 @@
 {
     "manifest_version": 3,
-    "name": "Claude Conversation Exporter",
-    "version": "1.0.0",
-    "description": "Export your Claude.ai conversations with full message history",
+    "name": "Conversation Frontgraph Exporter",
+    "version": "1.4.0",
+    "version_name": "1.4.0 — 2026-07-17 (checkbox select + Export Selected)",
+    "description": "Export your Claude.ai conversations with full message history and frontgraph YAML frontmatter (the frontmatter is the graph)",
       "permissions": [
     "activeTab",
     "storage",
@@ -22,7 +23,7 @@
       "content_scripts": [
     {
       "matches": ["https://claude.ai/*"],
-      "js": ["content.js"],
+      "js": ["utils.js", "content.js"],
       "css": ["content.css"]
     }
   ],

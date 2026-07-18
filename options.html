@@ -118,6 +118,22 @@
   </div>
 
   <div class="section">
+    <label for="defaultProject">Default frontgraph project key:</label>
+    <input type="text" id="defaultProject" placeholder="e.g. herk">
+    <div class="example">Stamped into the <code>project:</code> field of exported markdown frontmatter. If a conversation belongs to a Claude.ai Project, that name is used instead; if it belongs to none, the field is set to the literal <code>None</code>. Leave blank to fill in by hand later; override per export in the popup or browse page.</div>
+    <button id="saveProjectBtn">Save Project</button>
+    <div id="projectStatus" class="status"></div>
+  </div>
+
+  <div class="section">
+    <label for="defaultContributor">Default contributor name:</label>
+    <input type="text" id="defaultContributor" placeholder="e.g. Steve">
+    <div class="example">Stamped into the <code>contributor:</code> field — the name <code>//hello</code> would have established in a live session. Override per export in the popup or browse page.</div>
+    <button id="saveContributorBtn">Save Contributor</button>
+    <div id="contributorStatus" class="status"></div>
+  </div>
+
+  <div class="section">
     <h3>Test Your Settings</h3>
     <p>After saving your Organization ID, you can test if it works:</p>
     <button id="testBtn">Test Connection</button>

@@ -1,4 +1,28 @@
-# Claude Conversation Exporter
+# Conversation Frontgraph Exporter
+
+**Frontgraph: making the frontmatter the knowledge graph.** That's the name of a method, not this tool — the claim, argued in the HTKG 2026 position paper "The Frontmatter Is the Graph," that a YAML header is an authored set of graph edges (`project`, `source_url`, `people`), written in the same act as the readable body beneath it, not reconstructed later by an indexer. `agents/stevez-agents.md`'s "YAML frontmatter is the routing instruction" was already Frontgraph in practice; the paper just gave it a name. See `outbox/2026-07-16-zet-frontgraph-method-not-tool.md` for the fuller note.
+
+This tool is one implementation of Frontgraph, forked from [socketteer/Claude-Conversation-Exporter](https://github.com/socketteer/Claude-Conversation-Exporter) for personal use in the stevez pipeline. The only behavioral change: markdown exports carry Frontgraph frontmatter matching the `//convo` skill's output schema, so an exported conversation reads as what a live `//convo` run would have produced, minus the parts that require actually reading the transcript.
+
+**Frontmatter fields, and where each one comes from:**
+- `title`, `date` — the conversation's `name` and `created_at`, mechanical.
+- `created`, `updated` — the API's own `created_at`/`updated_at`, preserved verbatim (not just folded into `date`).
+- `type: conversation`, `status: reference`, `source: claude-conversation` — fixed, per the `//convo` skill.
+- `project` — the conversation's Claude.ai Project name (`project_name` from the API) if it belongs to one; the literal `None` if it doesn't; a "frontgraph project" field typed into the popup or browse page overrides either.
+- `contributor` — what `//hello` would have established in a live session; typed into the popup/browse page, with a default savable in options.
+- `summary` — scraped verbatim from the API's own `summary` field (Claude already writes one per conversation) and flattened to one YAML line.
+- `source_url`, `model`, `session_id` — extra Frontgraph edges beyond the skill's own schema: the live chat URL, inferred model, and conversation UUID.
+- `tags`, `artifacts_produced`, `decisions_made`, `open_questions`, `next_actions`, `linked_notes` — left blank. A mechanical export can't read and judge the transcript; that's the live `//convo` skill's job (or a later pass over the exported file).
+
+Filenames for markdown exports follow the outbox convention `[YYYY-MM-DD]-[slug].md` instead of upstream's `claude-<name>.md` — see `buildFrontgraphFilename()` in `utils.js`. `content.js` no longer duplicates the conversion functions; it shares `utils.js` (now loaded as a content script ahead of it in the manifest).
+
+**Checking which version is actually loaded:** `manifest.json`'s `version_name` is stamped `<version> — <date> (<one-line change>)` on every change and bumped alongside `version`. It's shown in small print at the bottom of both the popup and the browse page, so after reloading the unpacked extension in `chrome://extensions` you can confirm you're on the build you think you're on without digging into the extension details page.
+
+Load unpacked from this folder (`chrome://extensions` → Developer mode → Load unpacked) and configure your Organization ID in the options page, same as upstream.
+
+---
+
+Original upstream description follows.
 
 A Chrome extension that allows you to export your Claude.ai conversations in various formats (JSON, Markdown, Plain Text) with support for bulk exports and conversation browsing.
 

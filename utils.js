@@ -30,10 +30,99 @@ function getCurrentBranch(data) {
   return branch;
 }
 
+// --- frontgraph: the frontmatter is the graph --------------------------
+// Schema mirrors the //convo skill's output format. A browser-export is
+// post-hoc and mechanical: it shapes the frontmatter shell and scrapes
+// what the API hands over for free, but it doesn't read the transcript,
+// so it can't judge tags/decisions/open_questions the way a live //convo
+// run does. Those stay blank for Steve (or a later pass) to fill in.
+
+function slugify(text) {
+  const slug = (text || '')
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60);
+  return slug || 'untitled';
+}
+
+function formatDateYYYYMMDD(isoString) {
+  const d = isoString ? new Date(isoString) : new Date(0);
+  return d.toISOString().slice(0, 10);
+}
+
+// Quote a scalar for safe YAML embedding (titles/URLs may contain ": ", quotes, etc.)
+function yamlScalar(value) {
+  const str = String(value ?? '');
+  return `"${str.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+}
+
+// Collapse a multi-paragraph API string (e.g. summary) to one safe YAML line
+function collapseWhitespace(str) {
+  return String(str ?? '').replace(/\s+/g, ' ').trim();
+}
+
+// Frontmatter schema mirrors the //convo skill's output format exactly
+// (type: conversation, status: reference, contributor, tags, source,
+// artifacts_produced/decisions_made/open_questions/next_actions/linked_notes).
+// Fields the API hands us for free are scraped: summary, and project —
+// via project_name on conversations that belong to a Claude.ai Project,
+// or the literal "None" when a conversation isn't in one. created/updated
+// preserve the API's own created_at/updated_at, verbatim, alongside the
+// derived YYYY-MM-DD date used for the outbox filename. Everything that
+// requires reading and judging the transcript (tags, decisions_made,
+// open_questions, next_actions, artifacts_produced, contributor unless
+// supplied) is left as a blank placeholder — that's the live //convo
+// skill's job, not a mechanical export's.
+function buildFrontgraphFrontmatter(data, opts = {}) {
+  // API shape is inconsistent across endpoints: the single-conversation
+  // fetch (used here at export time) returns a flat project_name, but the
+  // bulk list endpoint returns a nested project: {uuid, name} instead.
+  // Check both so this doesn't silently break if that ever flips.
+  const project = opts.project || data.project_name || (data.project && data.project.name) || 'None';
+  const lines = [
+    '---',
+    `title: ${yamlScalar(data.name || 'Untitled Conversation')}`,
+    `date: ${formatDateYYYYMMDD(data.created_at)}`,
+    `created: ${yamlScalar(data.created_at || '')}`,
+    `updated: ${yamlScalar(data.updated_at || '')}`,
+    'type: conversation',
+    'status: reference',
+    `project: ${yamlScalar(project)}`,
+    `contributor: ${opts.contributor || ''}`,
+    `tags: ${opts.tags || ''}`,
+    'source: claude-conversation',
+    `source_url: ${yamlScalar(`https://claude.ai/chat/${data.uuid || ''}`)}`,
+    `model: ${data.model || ''}`,
+    `session_id: ${data.uuid || ''}`,
+    `summary: ${yamlScalar(collapseWhitespace(data.summary))}`,
+    'artifacts_produced:',
+    '  - ',
+    'decisions_made:',
+    '  - ',
+    'open_questions:',
+    '  - ',
+    'next_actions:',
+    '  - ',
+    'linked_notes:',
+    '  - ',
+    '---',
+    ''
+  ];
+  return lines.join('\n');
+}
+
+// stevez outbox filename convention: [YYYY-MM-DD]-[slug].md
+function buildFrontgraphFilename(data) {
+  return `${formatDateYYYYMMDD(data.created_at)}-${slugify(data.name)}.md`;
+}
+
 // Convert to markdown format
-function convertToMarkdown(data, includeMetadata) {
-  let markdown = `# ${data.name || 'Untitled Conversation'}\n\n`;
-  
+function convertToMarkdown(data, includeMetadata, frontmatterOpts) {
+  let markdown = buildFrontgraphFrontmatter(data, frontmatterOpts || {});
+  markdown += `# ${data.name || 'Untitled Conversation'}\n\n`;
+
   if (includeMetadata) {
     markdown += `**Created:** ${new Date(data.created_at).toLocaleString()}\n`;
     markdown += `**Updated:** ${new Date(data.updated_at).toLocaleString()}\n`;

@@ -15,6 +15,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('exportCurrent').disabled = true;
     document.getElementById('exportAll').disabled = true;
   }
+
+  chrome.storage.sync.get(['defaultProject'], (result) => {
+    document.getElementById('project').value = result.defaultProject || '';
+  });
+  chrome.storage.sync.get(['defaultContributor'], (result) => {
+    document.getElementById('contributor').value = result.defaultContributor || '';
+  });
+
+  const manifest = chrome.runtime.getManifest();
+  document.getElementById('versionInfo').textContent = manifest.version_name || `v${manifest.version}`;
 });
 
 // Handle options link click
@@ -74,7 +84,9 @@ document.getElementById('exportCurrent').addEventListener('click', async () => {
       conversationId,
       orgId,
       format: document.getElementById('format').value,
-      includeMetadata: document.getElementById('includeMetadata').checked
+      includeMetadata: document.getElementById('includeMetadata').checked,
+      project: document.getElementById('project').value.trim(),
+      contributor: document.getElementById('contributor').value.trim()
     }, (response) => {
       if (chrome.runtime.lastError) {
         console.error('Chrome runtime error:', chrome.runtime.lastError);
@@ -122,7 +134,9 @@ document.getElementById('exportCurrent').addEventListener('click', async () => {
       action: 'exportAllConversations',
       orgId,
       format: document.getElementById('format').value,
-      includeMetadata: document.getElementById('includeMetadata').checked
+      includeMetadata: document.getElementById('includeMetadata').checked,
+      project: document.getElementById('project').value.trim(),
+      contributor: document.getElementById('contributor').value.trim()
     }, (response) => {
       if (chrome.runtime.lastError) {
         console.error('Chrome runtime error:', chrome.runtime.lastError);

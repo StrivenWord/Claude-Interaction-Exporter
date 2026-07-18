@@ -393,7 +393,14 @@
           <option value="">All Models</option>
         </select>
       </div>
-      
+
+      <div class="filter-group">
+        <label>Project:</label>
+        <select id="projectFilter">
+          <option value="">All Projects</option>
+        </select>
+      </div>
+
       <div class="filter-group">
         <label>Sort by:</label>
         <select id="sortBy">
@@ -403,6 +410,8 @@
           <option value="created_asc">Oldest Created</option>
           <option value="name_asc">Name (A-Z)</option>
           <option value="name_desc">Name (Z-A)</option>
+          <option value="project_asc">Project (A-Z)</option>
+          <option value="project_desc">Project (Z-A)</option>
         </select>
       </div>
       
@@ -423,11 +432,25 @@
           <input type="checkbox" id="includeMetadata" checked>
           Metadata
         </label>
+        <label>
+          frontgraph project:
+          <input type="text" id="exportProject" placeholder="e.g. herk" style="width: 100px;">
+        </label>
+        <label>
+          contributor:
+          <input type="text" id="exportContributor" placeholder="e.g. Steve" style="width: 100px;">
+        </label>
       </div>
       
       <button class="export-all-btn" id="exportAllBtn" disabled>
         Export All
       </button>
+
+      <button class="export-all-btn" id="exportSelectedBtn" disabled>
+        Export Selected
+      </button>
+
+      <span id="versionInfo" style="font-size: 11px; color: #999; margin-left: auto;"></span>
     </div>
   </div>
   

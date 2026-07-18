@@ -103,6 +103,16 @@
       <input type="checkbox" id="includeMetadata" checked>
       Include metadata (timestamps, model, etc.)
     </label>
+
+    <label>
+      frontgraph project (for markdown frontmatter):
+      <input type="text" id="project" placeholder="e.g. herk" style="width: 100%; padding: 5px; margin-top: 5px; border: 1px solid #ddd; border-radius: 3px;">
+    </label>
+
+    <label>
+      contributor:
+      <input type="text" id="contributor" placeholder="e.g. Steve" style="width: 100%; padding: 5px; margin-top: 5px; border: 1px solid #ddd; border-radius: 3px;">
+    </label>
   </div>
 
   <button id="exportCurrent">Export Current Conversation</button>
@@ -110,6 +120,7 @@
   <button id="browseConversations">Browse All Conversations</button>
   
   <div id="status"></div>
+  <div id="versionInfo" style="margin-top: 10px; font-size: 11px; color: #999; text-align: center;"></div>
   </div>
 
   <script src="utils.js"></script>

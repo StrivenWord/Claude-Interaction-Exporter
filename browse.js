@@ -4,6 +4,21 @@ let filteredConversations = [];
 let orgId = null;
 let currentSort = 'updated_desc';
 
+// Selected conversation UUIDs, kept independent of what's currently
+// rendered/filtered so selections survive search/filter/sort changes.
+let selectedIds = new Set();
+
+// Bucket label for conversations not attached to any Claude.ai Project
+const NO_PROJECT = 'No Project';
+
+// The bulk list endpoint returns project as a nested {uuid, name} object;
+// the single-conversation endpoint (used at export time) returns a flat
+// project_name string. Handle either shape so this keeps working if the
+// API changes which one shows up where.
+function getProjectName(conv) {
+  return conv.project_name || (conv.project && conv.project.name) || NO_PROJECT;
+}
+
 // Model name mappings
 const MODEL_DISPLAY_NAMES = {
   'claude-3-sonnet-20240229': 'Claude 3 Sonnet',
@@ -38,9 +53,42 @@ const DEFAULT_MODEL_TIMELINE = [
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', async () => {
   await loadOrgId();
+  await loadDefaultProject();
+  await loadDefaultContributor();
   await loadConversations();
   setupEventListeners();
+
+  const manifest = chrome.runtime.getManifest();
+  document.getElementById('versionInfo').textContent = manifest.version_name || `v${manifest.version}`;
 });
+
+// Load the default frontgraph project key from storage and persist edits
+async function loadDefaultProject() {
+  return new Promise((resolve) => {
+    chrome.storage.sync.get(['defaultProject'], (result) => {
+      const input = document.getElementById('exportProject');
+      input.value = result.defaultProject || '';
+      input.addEventListener('change', () => {
+        chrome.storage.sync.set({ defaultProject: input.value.trim() });
+      });
+      resolve();
+    });
+  });
+}
+
+// Load the default contributor name from storage and persist edits
+async function loadDefaultContributor() {
+  return new Promise((resolve) => {
+    chrome.storage.sync.get(['defaultContributor'], (result) => {
+      const input = document.getElementById('exportContributor');
+      input.value = result.defaultContributor || '';
+      input.addEventListener('change', () => {
+        chrome.storage.sync.set({ defaultContributor: input.value.trim() });
+      });
+      resolve();
+    });
+  });
+}
 
 // Infer model for conversations with null model based on date
 function inferModel(conversation) {
@@ -104,7 +152,11 @@ async function loadConversations() {
     // Extract unique models for filter
     const models = [...new Set(allConversations.map(c => c.model))].filter(m => m).sort();
     populateModelFilter(models);
-    
+
+    // Extract unique projects for filter (conversations with no project group under NO_PROJECT)
+    const projects = [...new Set(allConversations.map(getProjectName))].sort();
+    populateProjectFilter(projects);
+
     // Apply initial sort and display
     applyFiltersAndSort();
     
@@ -132,6 +184,19 @@ function formatModelName(model) {
   return MODEL_DISPLAY_NAMES[model] || model;
 }
 
+// Populate project filter dropdown
+function populateProjectFilter(projects) {
+  const projectFilter = document.getElementById('projectFilter');
+  projectFilter.innerHTML = '<option value="">All Projects</option>';
+
+  projects.forEach(project => {
+    const option = document.createElement('option');
+    option.value = project;
+    option.textContent = project;
+    projectFilter.appendChild(option);
+  });
+}
+
 // Get model badge class
 function getModelBadgeClass(model) {
   if (model.includes('sonnet')) return 'sonnet';
@@ -144,16 +209,18 @@ function getModelBadgeClass(model) {
 function applyFiltersAndSort() {
   const searchTerm = document.getElementById('searchInput').value.toLowerCase();
   const modelFilter = document.getElementById('modelFilter').value;
-  
+  const projectFilter = document.getElementById('projectFilter').value;
+
   // Filter conversations
   filteredConversations = allConversations.filter(conv => {
-    const matchesSearch = !searchTerm || 
+    const matchesSearch = !searchTerm ||
       conv.name.toLowerCase().includes(searchTerm) ||
       (conv.summary && conv.summary.toLowerCase().includes(searchTerm));
-    
+
     const matchesModel = !modelFilter || conv.model === modelFilter;
-    
-    return matchesSearch && matchesModel;
+    const matchesProject = !projectFilter || getProjectName(conv) === projectFilter;
+
+    return matchesSearch && matchesModel && matchesProject;
   });
   
   // Sort conversations
@@ -184,6 +251,10 @@ function sortConversations() {
         aVal = new Date(a.updated_at);
         bVal = new Date(b.updated_at);
         break;
+      case 'project':
+        aVal = getProjectName(a).toLowerCase();
+        bVal = getProjectName(b).toLowerCase();
+        break;
       default:
         return 0;
     }
@@ -209,23 +280,27 @@ function displayConversations() {
     <table>
       <thead>
         <tr>
+          <th><input type="checkbox" id="selectAllVisible"></th>
           <th class="sortable" data-sort="name">Name</th>
           <th class="sortable" data-sort="updated">Last Updated</th>
           <th class="sortable" data-sort="created">Created</th>
           <th>Model</th>
+          <th class="sortable" data-sort="project">Project</th>
           <th>Actions</th>
         </tr>
       </thead>
       <tbody>
   `;
-  
+
   filteredConversations.forEach(conv => {
     const updatedDate = new Date(conv.updated_at).toLocaleDateString();
     const createdDate = new Date(conv.created_at).toLocaleDateString();
     const modelBadgeClass = getModelBadgeClass(conv.model);
-    
+    const checked = selectedIds.has(conv.uuid) ? 'checked' : '';
+
     html += `
       <tr data-id="${conv.uuid}">
+        <td><input type="checkbox" class="row-select" data-id="${conv.uuid}" ${checked}></td>
         <td>
           <div class="conversation-name">
             <a href="https://claude.ai/chat/${conv.uuid}" target="_blank" title="${conv.name}">
@@ -240,6 +315,7 @@ function displayConversations() {
             ${formatModelName(conv.model)}
           </span>
         </td>
+        <td>${getProjectName(conv)}</td>
         <td>
           <div class="actions">
             <button class="btn-small btn-export" data-id="${conv.uuid}" data-name="${conv.name}">
@@ -253,21 +329,21 @@ function displayConversations() {
       </tr>
     `;
   });
-  
+
   html += `
       </tbody>
     </table>
   `;
-  
+
   tableContent.innerHTML = html;
-  
+
   // Add export button listeners
   document.querySelectorAll('.btn-export').forEach(btn => {
     btn.addEventListener('click', (e) => {
       exportConversation(e.target.dataset.id, e.target.dataset.name);
     });
   });
-  
+
   // Add view button listeners
   document.querySelectorAll('.btn-view').forEach(btn => {
     btn.addEventListener('click', (e) => {
@@ -275,15 +351,58 @@ function displayConversations() {
       window.open(`https://claude.ai/chat/${conversationId}`, '_blank');
     });
   });
-  
+
+  // Row selection checkboxes
+  document.querySelectorAll('.row-select').forEach(cb => {
+    cb.addEventListener('change', (e) => {
+      const id = e.target.dataset.id;
+      if (e.target.checked) selectedIds.add(id);
+      else selectedIds.delete(id);
+      updateSelectionUI();
+    });
+  });
+
+  // Select-all-visible checkbox
+  document.getElementById('selectAllVisible').addEventListener('change', (e) => {
+    filteredConversations.forEach(conv => {
+      if (e.target.checked) selectedIds.add(conv.uuid);
+      else selectedIds.delete(conv.uuid);
+    });
+    displayConversations();
+  });
+
+  updateSelectionUI();
+
   // Enable export all button
   document.getElementById('exportAllBtn').disabled = false;
+}
+
+// Reflect current selection in the header checkbox, stats, and Export Selected button
+function updateSelectionUI() {
+  const visibleIds = filteredConversations.map(c => c.uuid);
+  const visibleSelected = visibleIds.filter(id => selectedIds.has(id));
+
+  const selectAllVisible = document.getElementById('selectAllVisible');
+  if (selectAllVisible) {
+    selectAllVisible.checked = visibleIds.length > 0 && visibleSelected.length === visibleIds.length;
+    selectAllVisible.indeterminate = visibleSelected.length > 0 && visibleSelected.length < visibleIds.length;
+  }
+
+  const exportSelectedBtn = document.getElementById('exportSelectedBtn');
+  if (exportSelectedBtn) {
+    exportSelectedBtn.disabled = selectedIds.size === 0;
+    exportSelectedBtn.textContent = selectedIds.size > 0 ? `Export Selected (${selectedIds.size})` : 'Export Selected';
+  }
+
+  updateStats();
 }
 
 // Update statistics
 function updateStats() {
   const stats = document.getElementById('stats');
-  stats.textContent = `Showing ${filteredConversations.length} of ${allConversations.length} conversations`;
+  let text = `Showing ${filteredConversations.length} of ${allConversations.length} conversations`;
+  if (selectedIds.size > 0) text += ` — ${selectedIds.size} selected`;
+  stats.textContent = text;
 }
 
 // Export single conversation
@@ -313,11 +432,14 @@ async function exportConversation(conversationId, conversationName) {
     // Infer model if null
     data.model = inferModel(data);
     
+    const project = document.getElementById('exportProject').value.trim();
+    const contributor = document.getElementById('exportContributor').value.trim();
+
     let content, filename, type;
     switch (format) {
       case 'markdown':
-        content = convertToMarkdown(data, includeMetadata);
-        filename = `claude-${conversationName || conversationId}.md`;
+        content = convertToMarkdown(data, includeMetadata, { project, contributor });
+        filename = buildFrontgraphFilename(data);
         type = 'text/markdown';
         break;
       case 'text':
@@ -340,15 +462,28 @@ async function exportConversation(conversationId, conversationName) {
   }
 }
 
-// Export all filtered conversations
+// Export all conversations currently passing the search/model/project filters
 async function exportAllFiltered() {
+  await exportConversationsBatch(filteredConversations, 'exportAllBtn', 'Export All');
+}
+
+// Export only the checked rows, regardless of what's currently filtered/visible
+async function exportSelected() {
+  const conversations = allConversations.filter(c => selectedIds.has(c.uuid));
+  await exportConversationsBatch(conversations, 'exportSelectedBtn', 'Export Selected');
+}
+
+// Shared batch-export flow: fetches each conversation, converts, zips, downloads.
+async function exportConversationsBatch(conversations, buttonId, defaultLabel) {
   const format = document.getElementById('exportFormat').value;
   const includeMetadata = document.getElementById('includeMetadata').checked;
-  
-  const button = document.getElementById('exportAllBtn');
+  const project = document.getElementById('exportProject').value.trim();
+  const contributor = document.getElementById('exportContributor').value.trim();
+
+  const button = document.getElementById(buttonId);
   button.disabled = true;
   button.textContent = 'Preparing...';
-  
+
   // Show progress modal
   const progressModal = document.getElementById('progressModal');
   const progressBar = document.getElementById('progressBar');
@@ -366,19 +501,19 @@ async function exportAllFiltered() {
   try {
     // Create a new ZIP file
     const zip = new JSZip();
-    const total = filteredConversations.length;
+    const total = conversations.length;
     let completed = 0;
     let failed = 0;
     const failedConversations = [];
-    
+
     progressText.textContent = `Exporting ${total} conversations...`;
-    
+
     // Process conversations in batches to avoid overwhelming the API
     const batchSize = 3; // Process 3 at a time
     for (let i = 0; i < total; i += batchSize) {
       if (cancelExport) break;
-      
-      const batch = filteredConversations.slice(i, Math.min(i + batchSize, total));
+
+      const batch = conversations.slice(i, Math.min(i + batchSize, total));
       const promises = batch.map(async (conv) => {
         try {
           const response = await fetch(
@@ -406,8 +541,8 @@ async function exportAllFiltered() {
           
           switch (format) {
             case 'markdown':
-              content = convertToMarkdown(data, includeMetadata);
-              filename = `${safeName}.md`;
+              content = convertToMarkdown(data, includeMetadata, { project, contributor });
+              filename = buildFrontgraphFilename(data);
               break;
             case 'text':
               content = convertToText(data, includeMetadata);
@@ -499,7 +634,8 @@ async function exportAllFiltered() {
     showToast(`Export failed: ${error.message}`, true);
   } finally {
     button.disabled = false;
-    button.textContent = 'Export All';
+    button.textContent = defaultLabel;
+    updateSelectionUI(); // restores the "(N)" suffix on Export Selected, if any remain checked
   }
 }
 
@@ -547,6 +683,9 @@ function setupEventListeners() {
   
   // Model filter
   document.getElementById('modelFilter').addEventListener('change', applyFiltersAndSort);
+
+  // Project filter
+  document.getElementById('projectFilter').addEventListener('change', applyFiltersAndSort);
   
   // Sort dropdown
   document.getElementById('sortBy').addEventListener('change', (e) => {
@@ -556,4 +695,7 @@ function setupEventListeners() {
   
   // Export all button
   document.getElementById('exportAllBtn').addEventListener('click', exportAllFiltered);
+
+  // Export selected button
+  document.getElementById('exportSelectedBtn').addEventListener('click', exportSelected);
 }
