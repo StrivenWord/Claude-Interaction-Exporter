@@ -297,14 +297,16 @@ function displayConversations() {
     const createdDate = new Date(conv.created_at).toLocaleDateString();
     const modelBadgeClass = getModelBadgeClass(conv.model);
     const checked = selectedIds.has(conv.uuid) ? 'checked' : '';
+    const safeConvName = escapeHtml(conv.name);
+    const safeProjectName = escapeHtml(getProjectName(conv));
 
     html += `
       <tr data-id="${conv.uuid}">
         <td><input type="checkbox" class="row-select" data-id="${conv.uuid}" ${checked}></td>
         <td>
           <div class="conversation-name">
-            <a href="https://claude.ai/chat/${conv.uuid}" target="_blank" title="${conv.name}">
-              ${conv.name}
+            <a href="https://claude.ai/chat/${conv.uuid}" target="_blank" title="${safeConvName}">
+              ${safeConvName}
             </a>
           </div>
         </td>
@@ -315,10 +317,10 @@ function displayConversations() {
             ${formatModelName(conv.model)}
           </span>
         </td>
-        <td>${getProjectName(conv)}</td>
+        <td>${safeProjectName}</td>
         <td>
           <div class="actions">
-            <button class="btn-small btn-export" data-id="${conv.uuid}" data-name="${conv.name}">
+            <button class="btn-small btn-export" data-id="${conv.uuid}" data-name="${safeConvName}">
               Export
             </button>
             <button class="btn-small btn-view" data-id="${conv.uuid}">
@@ -645,7 +647,7 @@ async function exportConversationsBatch(conversations, buttonId, defaultLabel) {
 // Show error message
 function showError(message) {
   const tableContent = document.getElementById('tableContent');
-  tableContent.innerHTML = `<div class="error">${message}</div>`;
+  tableContent.innerHTML = `<div class="error">${escapeHtml(message)}</div>`;
 }
 
 // Show toast notification

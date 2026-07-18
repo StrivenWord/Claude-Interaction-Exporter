@@ -40,9 +40,11 @@ linked_notes:
 
 Load unpacked from this folder (`chrome://extensions` → Developer mode → Load unpacked) and configure your Organization ID in the options page, same as upstream. `manifest.json`'s `version_name` field shows in small print at the bottom of the popup and browse page, so you can confirm which build is actually loaded after a reload.
 
+**Also fixed:** upstream's [issue #12](https://github.com/socketteer/Claude-Conversation-Exporter/issues/12) — a DOM XSS in the browse page (conversation titles were inserted into `innerHTML` unescaped; a title like `<img src=x onerror=...>` would execute) and an overly broad `web_accessible_resources` match (`<all_urls>`, narrowed to `https://claude.ai/*`). Both patched here. And the accent color is green instead of upstream's purple, so it's visually obvious at a glance which build is loaded.
+
 ## Provenance
 
-These three changes were specified and directed by Steven M. Schneider (SUNY Polytechnic Institute); all code was written by Claude Code (Anthropic), specifically Claude Sonnet 5, across sessions dated 2026-07-16 through 2026-07-18.
+These changes were specified and directed by Steven M. Schneider (SUNY Polytechnic Institute); all code was written by Claude Code (Anthropic), specifically Claude Sonnet 5, across sessions dated 2026-07-16 through 2026-07-18.
 
 ## License
 

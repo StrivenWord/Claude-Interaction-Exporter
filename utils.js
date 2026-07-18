@@ -1,5 +1,18 @@
 // Shared utility functions for Claude Exporter
 
+// Escape a string for safe insertion into innerHTML — both as text content
+// and inside a quoted attribute value (conversation titles are user-authored
+// and get inserted directly into the browse table's markup; see upstream
+// issue #12 for the DOM XSS this closes).
+function escapeHtml(str) {
+  return String(str ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 // Helper function to reconstruct the current branch from the message tree
 function getCurrentBranch(data) {
   if (!data.chat_messages || !data.current_leaf_message_uuid) {

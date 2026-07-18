@@ -1,8 +1,8 @@
 {
     "manifest_version": 3,
     "name": "Conversation Frontgraph Exporter",
-    "version": "1.4.0",
-    "version_name": "1.4.0 — 2026-07-17 (checkbox select + Export Selected)",
+    "version": "1.4.1",
+    "version_name": "1.4.1 — 2026-07-18 (fix upstream #12: XSS + manifest scope; green theme)",
     "description": "Export your Claude.ai conversations with full message history and frontgraph YAML frontmatter (the frontmatter is the graph)",
       "permissions": [
     "activeTab",
@@ -39,7 +39,7 @@
   "web_accessible_resources": [
     {
       "resources": ["browse.html"],
-      "matches": ["<all_urls>"]
+      "matches": ["https://claude.ai/*"]
     }
   ]
   }
