@@ -1,8 +1,12 @@
 // Note: Organization ID is now stored in extension settings
 // Users need to configure it in the extension options page
+//
+// Like utils.js, this file is injected twice — by the manifest and again by
+// background.js — so it must stay free of top-level const/let and register its
+// message listener only once. See the guard at the bottom of the file.
 
 // Default model timeline for null models
-const DEFAULT_MODEL_TIMELINE = [
+var DEFAULT_MODEL_TIMELINE = [
   { date: new Date('2024-01-01'), model: 'claude-3-sonnet-20240229' }, // Before June 20, 2024
   { date: new Date('2024-06-20'), model: 'claude-3-5-sonnet-20240620' }, // Starting June 20, 2024
   { date: new Date('2024-10-22'), model: 'claude-3-5-sonnet-20241022' }, // Starting October 22, 2024
@@ -74,7 +78,7 @@ function inferModel(conversation) {
   // manifest loads as a content script ahead of this file.
 
   // Handle messages from popup
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+function handleExportMessage(request, sender, sendResponse) {
   if (request.action === 'exportConversation') {
     console.log('Export conversation request received:', request);
     
@@ -193,7 +197,15 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           details: error.stack 
         });
       });
-    
+
     return true;
   }
-  });
+}
+
+// Register once per page, dispatching through the binding rather than the
+// function object so a re-injection's fresh code is what actually runs.
+if (!window.__frontgraphExporterListening) {
+  window.__frontgraphExporterListening = true;
+  chrome.runtime.onMessage.addListener((request, sender, sendResponse) =>
+    handleExportMessage(request, sender, sendResponse));
+}

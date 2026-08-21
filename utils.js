@@ -1,4 +1,9 @@
 // Shared utility functions for Claude Exporter
+//
+// This file is injected into claude.ai twice — once by the manifest's
+// content_scripts and again by background.js for tabs that were already open.
+// Keep it free of top-level const/let: a duplicate declaration is a parse-time
+// error that would abort the whole re-injection, leaving a stale copy live.
 
 // Escape a string for safe insertion into innerHTML — both as text content
 // and inside a quoted attribute value (conversation titles are user-authored
@@ -103,16 +108,15 @@ function normalizeTags(input) {
   return tags;
 }
 
-// Sanitized tags only hold letters, digits, _, - and /, so the only ones
-// needing quotes are those a YAML parser would read as a number, date or bool.
-const YAML_AMBIGUOUS_TAG = /^([\d-]+|true|false|yes|no|on|off|null)$/i;
-
-// Obsidian's own frontmatter shape: a block sequence under the key.
+// Obsidian's own frontmatter shape: a block sequence under the key. Sanitized
+// tags only hold letters, digits, _, - and /, so the only ones needing quotes
+// are those a YAML parser would read as a number, date or boolean.
 function yamlTagList(tags) {
   if (!tags.length) {
     return 'tags: []';
   }
-  const items = tags.map(tag => `  - ${YAML_AMBIGUOUS_TAG.test(tag) ? yamlScalar(tag) : tag}`);
+  const ambiguous = /^([\d-]+|true|false|yes|no|on|off|null)$/i;
+  const items = tags.map(tag => `  - ${ambiguous.test(tag) ? yamlScalar(tag) : tag}`);
   return ['tags:', ...items].join('\n');
 }
 
