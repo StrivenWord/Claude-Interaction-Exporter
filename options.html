@@ -134,6 +134,14 @@
   </div>
 
   <div class="section">
+    <label for="defaultTags">Default tags:</label>
+    <input type="text" id="defaultTags" placeholder="e.g. research, claude-api">
+    <div class="example">Stamped into the <code>tags:</code> field of exported markdown frontmatter. Comma-separated list. Override per export in the popup or browse page.</div>
+    <button id="saveTagsBtn">Save Tags</button>
+    <div id="tagsStatus" class="status"></div>
+  </div>
+
+  <div class="section">
     <h3>Test Your Settings</h3>
     <p>After saving your Organization ID, you can test if it works:</p>
     <button id="testBtn">Test Connection</button>

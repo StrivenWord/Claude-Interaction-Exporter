@@ -55,6 +55,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadOrgId();
   await loadDefaultProject();
   await loadDefaultContributor();
+  await loadDefaultTags();
   await loadConversations();
   setupEventListeners();
 
@@ -84,6 +85,20 @@ async function loadDefaultContributor() {
       input.value = result.defaultContributor || '';
       input.addEventListener('change', () => {
         chrome.storage.sync.set({ defaultContributor: input.value.trim() });
+      });
+      resolve();
+    });
+  });
+}
+
+// Load the default tags from storage and persist edits
+async function loadDefaultTags() {
+  return new Promise((resolve) => {
+    chrome.storage.sync.get(['defaultTags'], (result) => {
+      const input = document.getElementById('exportTags');
+      input.value = result.defaultTags || '';
+      input.addEventListener('change', () => {
+        chrome.storage.sync.set({ defaultTags: input.value.trim() });
       });
       resolve();
     });
@@ -436,11 +451,12 @@ async function exportConversation(conversationId, conversationName) {
     
     const project = document.getElementById('exportProject').value.trim();
     const contributor = document.getElementById('exportContributor').value.trim();
+    const tags = document.getElementById('exportTags').value.trim();
 
     let content, filename, type;
     switch (format) {
       case 'markdown':
-        content = convertToMarkdown(data, includeMetadata, { project, contributor });
+        content = convertToMarkdown(data, includeMetadata, { project, contributor, tags });
         filename = buildFrontgraphFilename(data);
         type = 'text/markdown';
         break;
@@ -481,6 +497,7 @@ async function exportConversationsBatch(conversations, buttonId, defaultLabel) {
   const includeMetadata = document.getElementById('includeMetadata').checked;
   const project = document.getElementById('exportProject').value.trim();
   const contributor = document.getElementById('exportContributor').value.trim();
+  const tags = document.getElementById('exportTags').value.trim();
 
   const button = document.getElementById(buttonId);
   button.disabled = true;
@@ -543,7 +560,7 @@ async function exportConversationsBatch(conversations, buttonId, defaultLabel) {
           
           switch (format) {
             case 'markdown':
-              content = convertToMarkdown(data, includeMetadata, { project, contributor });
+              content = convertToMarkdown(data, includeMetadata, { project, contributor, tags });
               filename = buildFrontgraphFilename(data);
               break;
             case 'text':

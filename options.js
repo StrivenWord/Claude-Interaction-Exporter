@@ -13,6 +13,9 @@ document.addEventListener('DOMContentLoaded', () => {
   chrome.storage.sync.get(['defaultContributor'], (result) => {
     document.getElementById('defaultContributor').value = result.defaultContributor || '';
   });
+  chrome.storage.sync.get(['defaultTags'], (result) => {
+    document.getElementById('defaultTags').value = result.defaultTags || '';
+  });
 });
 
 // Save default frontgraph project key
@@ -30,6 +33,15 @@ document.getElementById('saveContributorBtn').addEventListener('click', () => {
   chrome.storage.sync.set({ defaultContributor }, () => {
     showStatus('contributorStatus', 'Default contributor saved!', 'success');
     setTimeout(() => hideStatus('contributorStatus'), 2000);
+  });
+});
+
+// Save default tags
+document.getElementById('saveTagsBtn').addEventListener('click', () => {
+  const defaultTags = document.getElementById('defaultTags').value.trim();
+  chrome.storage.sync.set({ defaultTags }, () => {
+    showStatus('tagsStatus', 'Default tags saved!', 'success');
+    setTimeout(() => hideStatus('tagsStatus'), 2000);
   });
 });
 

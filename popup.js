@@ -22,6 +22,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   chrome.storage.sync.get(['defaultContributor'], (result) => {
     document.getElementById('contributor').value = result.defaultContributor || '';
   });
+  chrome.storage.sync.get(['defaultTags'], (result) => {
+    document.getElementById('tags').value = result.defaultTags || '';
+  });
 
   const manifest = chrome.runtime.getManifest();
   document.getElementById('versionInfo').textContent = manifest.version_name || `v${manifest.version}`;
@@ -86,7 +89,8 @@ document.getElementById('exportCurrent').addEventListener('click', async () => {
       format: document.getElementById('format').value,
       includeMetadata: document.getElementById('includeMetadata').checked,
       project: document.getElementById('project').value.trim(),
-      contributor: document.getElementById('contributor').value.trim()
+      contributor: document.getElementById('contributor').value.trim(),
+      tags: document.getElementById('tags').value.trim()
     }, (response) => {
       if (chrome.runtime.lastError) {
         console.error('Chrome runtime error:', chrome.runtime.lastError);
@@ -129,14 +133,15 @@ document.getElementById('exportCurrent').addEventListener('click', async () => {
       }
       
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      
+
           chrome.tabs.sendMessage(tab.id, {
       action: 'exportAllConversations',
       orgId,
       format: document.getElementById('format').value,
       includeMetadata: document.getElementById('includeMetadata').checked,
       project: document.getElementById('project').value.trim(),
-      contributor: document.getElementById('contributor').value.trim()
+      contributor: document.getElementById('contributor').value.trim(),
+      tags: document.getElementById('tags').value.trim()
     }, (response) => {
       if (chrome.runtime.lastError) {
         console.error('Chrome runtime error:', chrome.runtime.lastError);
