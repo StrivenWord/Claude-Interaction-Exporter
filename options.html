@@ -136,7 +136,7 @@
   <div class="section">
     <label for="defaultTags">Default tags:</label>
     <input type="text" id="defaultTags" placeholder="e.g. research, claude-api">
-    <div class="example">Stamped into the <code>tags:</code> field of exported markdown frontmatter. Comma-separated list. Override per export in the popup or browse page.</div>
+    <div class="example">Starting value for the tags field in the popup and browse page, where each export sets its own. Comma-separated; a leading <code>#</code> and any characters Obsidian won't accept in a tag are stripped.</div>
     <button id="saveTagsBtn">Save Tags</button>
     <div id="tagsStatus" class="status"></div>
   </div>

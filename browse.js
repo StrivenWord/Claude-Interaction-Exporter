@@ -91,15 +91,13 @@ async function loadDefaultContributor() {
   });
 }
 
-// Load the default tags from storage and persist edits
+// Seed the tags field from the saved default. Unlike project/contributor, edits
+// here are deliberately not written back — tags describe the export at hand, so
+// a one-off shouldn't silently become the default for every export after it.
 async function loadDefaultTags() {
   return new Promise((resolve) => {
     chrome.storage.sync.get(['defaultTags'], (result) => {
-      const input = document.getElementById('exportTags');
-      input.value = result.defaultTags || '';
-      input.addEventListener('change', () => {
-        chrome.storage.sync.set({ defaultTags: input.value.trim() });
-      });
+      document.getElementById('exportTags').value = result.defaultTags || '';
       resolve();
     });
   });
@@ -461,12 +459,12 @@ async function exportConversation(conversationId, conversationName) {
         type = 'text/markdown';
         break;
       case 'text':
-        content = convertToText(data, includeMetadata);
+        content = convertToText(data, includeMetadata, { tags });
         filename = `claude-${conversationName || conversationId}.txt`;
         type = 'text/plain';
         break;
       default:
-        content = JSON.stringify(data, null, 2);
+        content = JSON.stringify(withExportTags(data, tags), null, 2);
         filename = `claude-${conversationName || conversationId}.json`;
         type = 'application/json';
     }
@@ -564,11 +562,11 @@ async function exportConversationsBatch(conversations, buttonId, defaultLabel) {
               filename = buildFrontgraphFilename(data);
               break;
             case 'text':
-              content = convertToText(data, includeMetadata);
+              content = convertToText(data, includeMetadata, { tags });
               filename = `${safeName}.txt`;
               break;
             default: // json
-              content = JSON.stringify(data, null, 2);
+              content = JSON.stringify(withExportTags(data, tags), null, 2);
               filename = `${safeName}.json`;
           }
           
@@ -611,7 +609,8 @@ async function exportConversationsBatch(conversations, buttonId, defaultLabel) {
       failed_exports: failed,
       failed_conversations: failedConversations,
       format: format,
-      include_metadata: includeMetadata
+      include_metadata: includeMetadata,
+      tags: normalizeTags(tags)
     };
     zip.file('export_summary.json', JSON.stringify(summary, null, 2));
     

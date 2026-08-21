@@ -13,26 +13,20 @@ updated: "2026-07-17T20:25:25.293495Z"
 type: conversation
 status: reference
 project: "pdf2md"
-contributor:
+contributor: Steve
 tags:
+  - research
+  - claude-api
 source: claude-conversation
 source_url: "https://claude.ai/chat/..."
 model: claude-opus-4-8
 session_id: ...
 summary: "..."
-artifacts_produced:
-  -
-decisions_made:
-  -
-open_questions:
-  -
-next_actions:
-  -
-linked_notes:
-  -
 ---
 ```
-`title`, `date`, `created`, `updated`, `source_url`, `model`, `session_id`, and `summary` are filled in automatically from data the Claude.ai API already returns (yes, including a per-conversation summary Claude writes itself). `project` auto-fills from the conversation's Claude.ai Project name, falling back to the literal `None` if it isn't in one — a "project" field in the popup/browse page overrides either. `contributor` and `tags` are typed in the same way. `artifacts_produced`, `decisions_made`, `open_questions`, `next_actions`, and `linked_notes` are left blank on purpose — filling those in requires actually reading the transcript, which a mechanical export can't do. Filenames also changed, from `claude-<name>.md` to `<YYYY-MM-DD>-<slug>.md`.
+`title`, `date`, `created`, `updated`, `source_url`, `model`, `session_id`, and `summary` are filled in automatically from data the Claude.ai API already returns (yes, including a per-conversation summary Claude writes itself). `project` auto-fills from the conversation's Claude.ai Project name, falling back to the literal `None` if it isn't in one — a "project" field in the popup/browse page overrides either. `contributor` and `tags` are typed in the same way. Filenames also changed, from `claude-<name>.md` to `<YYYY-MM-DD>-<slug>.md`.
+
+**Tags are per-export.** Type a comma-separated list into the tags field in the popup or the browse page and every file that export produces carries it — one conversation or a whole batch. Input is cleaned rather than rejected: a leading `#` comes off, spaces inside a tag become hyphens, anything outside the character set Obsidian accepts (letters, digits, `_`, `-`, `/`) is dropped, and duplicates collapse. Markdown gets a YAML block sequence, JSON gets a `tags` array on each conversation object, and plain text gets a `Tags:` line in the metadata header. The options page sets a starting value for the field; per-export edits don't overwrite it.
 
 **2. The browse page has a Project filter, sort, and column**, matching the existing Model filter — pick a Claude.ai Project from a dropdown to narrow the table, sort by it, and see it per-row. Conversations not in any project group under a "No Project" bucket so they stay filterable too.
 

@@ -47,8 +47,8 @@ function getCurrentBranch(data) {
 // Schema mirrors the //convo skill's output format. A browser-export is
 // post-hoc and mechanical: it shapes the frontmatter shell and scrapes
 // what the API hands over for free, but it doesn't read the transcript,
-// so it can't judge tags/decisions/open_questions the way a live //convo
-// run does. Those stay blank for Steve (or a later pass) to fill in.
+// so anything requiring judgment — tags, contributor — is typed into the
+// export UI rather than derived.
 
 function slugify(text) {
   const slug = (text || '')
@@ -76,13 +76,58 @@ function collapseWhitespace(str) {
   return String(str ?? '').replace(/\s+/g, ' ').trim();
 }
 
+// Tags are typed by hand at export time, so take whatever the field holds and
+// clean it rather than rejecting it: split on commas, drop the "#" Obsidian
+// users reflexively prefix, hyphenate interior spaces, and strip anything
+// outside the character set Obsidian accepts in a tag. Returns a deduped,
+// lowercased array so "Research, research" can't split the graph in two.
+function normalizeTags(input) {
+  const raw = Array.isArray(input) ? input.join(',') : String(input ?? '');
+  const seen = new Set();
+  const tags = [];
+
+  for (const candidate of raw.split(',')) {
+    const tag = candidate
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, '-')
+      .replace(/[^\p{L}\p{N}_/-]+/gu, '')
+      .replace(/^[-/]+|[-/]+$/g, '');
+
+    if (tag && !seen.has(tag)) {
+      seen.add(tag);
+      tags.push(tag);
+    }
+  }
+
+  return tags;
+}
+
+// Sanitized tags only hold letters, digits, _, - and /, so the only ones
+// needing quotes are those a YAML parser would read as a number, date or bool.
+const YAML_AMBIGUOUS_TAG = /^([\d-]+|true|false|yes|no|on|off|null)$/i;
+
+// Obsidian's own frontmatter shape: a block sequence under the key.
+function yamlTagList(tags) {
+  if (!tags.length) {
+    return 'tags: []';
+  }
+  const items = tags.map(tag => `  - ${YAML_AMBIGUOUS_TAG.test(tag) ? yamlScalar(tag) : tag}`);
+  return ['tags:', ...items].join('\n');
+}
+
+// JSON exports carry the same tags the markdown frontmatter would, as an array.
+function withExportTags(data, tags) {
+  return { ...data, tags: normalizeTags(tags) };
+}
+
 // Frontmatter schema mirrors the //convo skill's output format.
 // Fields the API hands us for free are scraped: summary, and project —
 // via project_name on conversations that belong to a Claude.ai Project,
 // or the literal "None" when a conversation isn't in one. created/updated
 // preserve the API's own created_at/updated_at, verbatim, alongside the
-// derived YYYY-MM-DD date used for the outbox filename. Fields requiring
-// judgment (tags, contributor unless supplied) must be filled in manually.
+// derived YYYY-MM-DD date used for the outbox filename. project, contributor
+// and tags come from the export UI, which overrides the scraped project.
 function buildFrontgraphFrontmatter(data, opts = {}) {
   // API shape is inconsistent across endpoints: the single-conversation
   // fetch (used here at export time) returns a flat project_name, but the
@@ -99,7 +144,7 @@ function buildFrontgraphFrontmatter(data, opts = {}) {
     'status: reference',
     `project: ${yamlScalar(project)}`,
     `contributor: ${opts.contributor || ''}`,
-    `tags: ${opts.tags || ''}`,
+    yamlTagList(normalizeTags(opts.tags)),
     'source: claude-conversation',
     `source_url: ${yamlScalar(`https://claude.ai/chat/${data.uuid || ''}`)}`,
     `model: ${data.model || ''}`,
@@ -178,16 +223,20 @@ function convertToMarkdown(data, includeMetadata, frontmatterOpts) {
 }
 
 // Convert to plain text
-function convertToText(data, includeMetadata) {
+function convertToText(data, includeMetadata, opts = {}) {
   let text = '';
-  
+
   // Add metadata header if requested
   if (includeMetadata) {
+    const tags = normalizeTags(opts.tags);
     text += `${data.name || 'Untitled Conversation'}\n`;
     text += `Created: ${new Date(data.created_at).toLocaleString()}\n`;
     text += `Updated: ${new Date(data.updated_at).toLocaleString()}\n`;
-    text += `Model: ${data.model}\n\n`;
-    text += '---\n\n';
+    text += `Model: ${data.model}\n`;
+    if (tags.length) {
+      text += `Tags: ${tags.join(', ')}\n`;
+    }
+    text += '\n---\n\n';
   }
   
   // Get only the current branch messages

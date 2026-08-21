@@ -87,19 +87,21 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         
         let content, filename, type;
         
+        const exportOpts = { project: request.project, contributor: request.contributor, tags: request.tags };
+
         switch (request.format) {
           case 'markdown':
-            content = convertToMarkdown(data, request.includeMetadata, { project: request.project, contributor: request.contributor });
+            content = convertToMarkdown(data, request.includeMetadata, exportOpts);
             filename = buildFrontgraphFilename(data);
             type = 'text/markdown';
             break;
           case 'text':
-            content = convertToText(data, request.includeMetadata);
+            content = convertToText(data, request.includeMetadata, exportOpts);
             filename = `claude-conversation-${data.name || request.conversationId}.txt`;
             type = 'text/plain';
             break;
           default:
-            content = JSON.stringify(data, null, 2);
+            content = JSON.stringify(withExportTags(data, request.tags), null, 2);
             filename = `claude-conversation-${data.name || request.conversationId}.json`;
             type = 'application/json';
         }
@@ -130,8 +132,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         if (request.format === 'json') {
           // For JSON, export as a single file with all conversations
           const filename = `claude-all-conversations-${new Date().toISOString().split('T')[0]}.json`;
+          const tagged = conversations.map(conv => withExportTags(conv, request.tags));
           console.log('Downloading all conversations as JSON:', filename);
-          downloadFile(JSON.stringify(conversations, null, 2), filename);
+          downloadFile(JSON.stringify(tagged, null, 2), filename);
           sendResponse({ success: true, count: conversations.length });
         } else {
           // For other formats, create individual files
@@ -147,13 +150,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
               fullConv.model = inferModel(fullConv);
               
               let content, filename, type;
-              
+              const exportOpts = { project: request.project, contributor: request.contributor, tags: request.tags };
+
               if (request.format === 'markdown') {
-                content = convertToMarkdown(fullConv, request.includeMetadata, { project: request.project, contributor: request.contributor });
+                content = convertToMarkdown(fullConv, request.includeMetadata, exportOpts);
                 filename = buildFrontgraphFilename(fullConv);
                 type = 'text/markdown';
               } else {
-                content = convertToText(fullConv, request.includeMetadata);
+                content = convertToText(fullConv, request.includeMetadata, exportOpts);
                 filename = `claude-${conv.name || conv.uuid}.txt`;
                 type = 'text/plain';
               }
