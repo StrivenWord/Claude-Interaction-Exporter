@@ -49,11 +49,10 @@ function getCurrentBranch(data) {
 }
 
 // --- frontgraph: the frontmatter is the graph --------------------------
-// Schema mirrors the //convo skill's output format. A browser-export is
-// post-hoc and mechanical: it shapes the frontmatter shell and scrapes
-// what the API hands over for free, but it doesn't read the transcript,
-// so anything requiring judgment — tags, contributor — is typed into the
-// export UI rather than derived.
+// A browser export is post-hoc and mechanical: it shapes the frontmatter
+// shell and scrapes what the API returns for free, but it never reads the
+// transcript, so anything requiring judgment — tags, contributor — is typed
+// into the export UI rather than derived.
 
 function slugify(text) {
   const slug = (text || '')
@@ -125,13 +124,12 @@ function withExportTags(data, tags) {
   return { ...data, tags: normalizeTags(tags) };
 }
 
-// Frontmatter schema mirrors the //convo skill's output format.
-// Fields the API hands us for free are scraped: summary, and project —
-// via project_name on conversations that belong to a Claude.ai Project,
-// or the literal "None" when a conversation isn't in one. created/updated
-// preserve the API's own created_at/updated_at, verbatim, alongside the
-// derived YYYY-MM-DD date used for the outbox filename. project, contributor
-// and tags come from the export UI, which overrides the scraped project.
+// Fields the API supplies are scraped: summary, and project — via
+// project_name on conversations that belong to a Claude.ai Project, or the
+// literal "None" when a conversation isn't in one. created/updated preserve
+// the API's own created_at/updated_at verbatim, alongside the derived
+// YYYY-MM-DD date used for the filename. project, contributor and tags come
+// from the export UI, which overrides the scraped project.
 function buildFrontgraphFrontmatter(data, opts = {}) {
   // API shape is inconsistent across endpoints: the single-conversation
   // fetch (used here at export time) returns a flat project_name, but the
@@ -160,7 +158,7 @@ function buildFrontgraphFrontmatter(data, opts = {}) {
   return lines.join('\n');
 }
 
-// stevez outbox filename convention: [YYYY-MM-DD]-[slug].md
+// Filename convention: [YYYY-MM-DD]-[slug].md
 function buildFrontgraphFilename(data) {
   return `${formatDateYYYYMMDD(data.created_at)}-${slugify(data.name)}.md`;
 }
