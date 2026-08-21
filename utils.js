@@ -76,18 +76,13 @@ function collapseWhitespace(str) {
   return String(str ?? '').replace(/\s+/g, ' ').trim();
 }
 
-// Frontmatter schema mirrors the //convo skill's output format exactly
-// (type: conversation, status: reference, contributor, tags, source,
-// artifacts_produced/decisions_made/open_questions/next_actions/linked_notes).
+// Frontmatter schema mirrors the //convo skill's output format.
 // Fields the API hands us for free are scraped: summary, and project —
 // via project_name on conversations that belong to a Claude.ai Project,
 // or the literal "None" when a conversation isn't in one. created/updated
 // preserve the API's own created_at/updated_at, verbatim, alongside the
-// derived YYYY-MM-DD date used for the outbox filename. Everything that
-// requires reading and judging the transcript (tags, decisions_made,
-// open_questions, next_actions, artifacts_produced, contributor unless
-// supplied) is left as a blank placeholder — that's the live //convo
-// skill's job, not a mechanical export's.
+// derived YYYY-MM-DD date used for the outbox filename. Fields requiring
+// judgment (tags, contributor unless supplied) must be filled in manually.
 function buildFrontgraphFrontmatter(data, opts = {}) {
   // API shape is inconsistent across endpoints: the single-conversation
   // fetch (used here at export time) returns a flat project_name, but the
@@ -110,16 +105,6 @@ function buildFrontgraphFrontmatter(data, opts = {}) {
     `model: ${data.model || ''}`,
     `session_id: ${data.uuid || ''}`,
     `summary: ${yamlScalar(collapseWhitespace(data.summary))}`,
-    'artifacts_produced:',
-    '  - ',
-    'decisions_made:',
-    '  - ',
-    'open_questions:',
-    '  - ',
-    'next_actions:',
-    '  - ',
-    'linked_notes:',
-    '  - ',
     '---',
     ''
   ];
