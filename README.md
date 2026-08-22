@@ -1,8 +1,112 @@
 # Conversation Frontgraph Exporter
 
-Fork of [socketteer/Claude-Conversation-Exporter](https://github.com/socketteer/Claude-Conversation-Exporter) with three functional additions on top of upstream:
+A Chrome extension that saves your own Claude.ai conversations, Cowork sessions, and scheduled tasks to files on your computer — as Markdown with YAML frontmatter, plain text, or JSON.
 
-**1. Markdown exports now include YAML frontmatter.** Every `.md` export starts with a structured header instead of just a `# Title`:
+The extension has no backend. It requests your conversations from Claude.ai using the same web API the site itself uses, builds the file in your browser, and saves it as a download. There is no account to create, no analytics, and no third-party service.
+
+> **Not affiliated with Anthropic.** This is a community tool, forked from
+> [socketteer/Claude-Conversation-Exporter](https://github.com/socketteer/Claude-Conversation-Exporter).
+
+## Contents
+
+- [Features](#features)
+- [Installation](#installation)
+- [Usage](#usage)
+- [Output](#output)
+- [Permissions](#permissions)
+- [Privacy](#privacy)
+- [Limitations](#limitations)
+- [Troubleshooting](#troubleshooting)
+- [Development](#development)
+- [Changes from upstream](#changes-from-upstream)
+- [Provenance](#provenance)
+- [License](#license)
+
+## Features
+
+- **Export the conversation you are viewing** — one click from the toolbar popup.
+- **Export Cowork sessions and scheduled tasks**, with their tool activity replayed into a readable transcript.
+- **Browse, search, filter, and sort** your conversations and sessions from a single page.
+- **Bulk export** selected rows, or everything matching your current filters, as a ZIP.
+- **Three formats** — Markdown, plain text, or raw JSON.
+- **YAML frontmatter** on Markdown exports, so files land in Obsidian or any other note system with their metadata already structured.
+- **Model information is preserved.** Claude.ai's own export does not record which model each conversation used; this one does, and infers the model from the conversation's date when the API reports `null` (the default-model case).
+- **Branch-aware.** Markdown and plain text follow the branch you have selected; JSON keeps every branch.
+
+## Installation
+
+**Prerequisites:** Chrome or another Chromium-based browser, and a Claude.ai account.
+
+### Load the extension
+
+1. Clone or download this repository.
+2. Open `chrome://extensions/`.
+3. Turn on **Developer mode** (top right).
+4. Click **Load unpacked** and select the folder containing `manifest.json`.
+5. Optionally pin it: click the puzzle-piece icon in the toolbar, then the pin beside "Conversation Frontgraph Exporter."
+
+The `version_name` field in `manifest.json` is shown in small print at the bottom of the popup and at the top right of the browse page, so you can confirm which build is loaded after a reload.
+
+### Configure your Organization ID
+
+The extension needs your Claude.ai organization ID to build the API path it fetches from. This is a one-time step.
+
+1. Sign in to Claude.ai.
+2. In a new tab, open `https://claude.ai/api/organizations`. Raw JSON is expected here; it is not an error.
+3. Find the value after `"uuid":` — it looks like `1a2b3c4d-5e6f-7890-abcd-ef1234567890`. Copy it without the quotation marks.
+4. Right-click the extension icon → **Options**, or click the icon and use the setup link.
+5. Paste the ID into **Organization ID**, click **Save Settings**, then click **Test Connection**. A successful test reports how many conversations it found.
+
+If you belong to more than one Claude organization — a personal account and a school workspace, say — that page lists several entries. Use the `uuid` of the one whose conversations you want.
+
+### Optional defaults
+
+The Options page also holds three defaults that pre-fill every export: a **project** key, a **contributor** name, and a **tag** list. Each has its own Save button, and any export can override them.
+
+One asymmetry is worth knowing. Editing **project** or **contributor** on the browse page writes the new value back as the saved default, while editing **tags** there does not — a one-off tag list never becomes permanent. The popup writes none of the three back.
+
+## Usage
+
+### Export the current conversation
+
+1. Open a conversation (`claude.ai/chat/...`) or a Cowork session (`claude.ai/cowork/...`).
+2. Click the extension icon.
+3. Choose a format, and optionally fill in project, contributor, and tags.
+4. Click **Export Current Conversation**.
+
+The extension detects which of the two you are on and exports accordingly.
+
+### Browse and bulk export
+
+Click the extension icon → **Browse All Conversations**. The browse page lists conversations and Cowork sessions in separate tables, where you can:
+
+- Search by name, and filter by model or by Claude Project
+- Sort by created or updated date, name, or project
+- Check individual rows and click **Export Selected**
+- Click **Export All** to export every conversation matching your current filters
+- Limit the task table to scheduled runs only
+
+**Export All** and **Export Selected** act on the conversation table. The task table has its own **Export All Tasks** button, which exports the sessions it is currently listing.
+
+Bulk exports are bundled into a ZIP containing an `export_summary.json` manifest, with task exports under a `tasks/` folder. Conversations are fetched three at a time, with a pause between batches to stay well inside rate limits. A progress dialog tracks the run and can cancel it; anything that fails is listed at the end rather than aborting the batch.
+
+The popup also has an **Export All Conversations** button, which does not produce a ZIP: in Markdown or plain text it downloads one file per conversation, which will make Chrome ask about multiple downloads, and in JSON it writes a single combined file built from the conversation-list endpoint, so it carries titles and metadata but no message history. For bulk work, and for complete JSON, use the browse page.
+
+## Output
+
+### Formats
+
+| Format | What you get | Best for |
+| --- | --- | --- |
+| **Markdown** | Human-readable, with YAML frontmatter. Current branch only. | Obsidian, note-taking, coursework, writing |
+| **Plain text** | `Human:` / `Assistant:` prefixes, shortened to `H:`/`A:` after the first. Current branch only. | Pasting into another tool or a text editor |
+| **JSON** | Complete raw data, including every branch and all metadata. | Archiving, scripts, data analysis |
+
+Markdown files are named `<YYYY-MM-DD>-<slug>.md`. The **Include metadata** checkbox in the popup and on the browse page controls the extra detail inside the file — per-message timestamps, attachment lists, the header block above the transcript, and, in Markdown exports of Cowork sessions, the tool-call and tool-result blocks themselves. YAML frontmatter is always written.
+
+### Frontmatter
+
+Every Markdown export opens with a structured YAML header:
 
 ```yaml
 ---
@@ -24,271 +128,109 @@ session_id: ...
 summary: "..."
 ---
 ```
-`title`, `date`, `created`, `updated`, `source_url`, `model`, `session_id`, and `summary` are filled in automatically from data the Claude.ai API already returns (yes, including a per-conversation summary Claude writes itself). `project` auto-fills from the conversation's Claude.ai Project name, falling back to the literal `None` if it isn't in one — a "project" field in the popup/browse page overrides either. `contributor` and `tags` are typed in the same way. Filenames also changed, from `claude-<name>.md` to `<YYYY-MM-DD>-<slug>.md`.
 
-**Tags are per-export.** Type a comma-separated list into the tags field in the popup or the browse page and every file that export produces carries it — one conversation or a whole batch. Input is cleaned rather than rejected: a leading `#` comes off, spaces inside a tag become hyphens, anything outside the character set Obsidian accepts (letters, digits, `_`, `-`, `/`) is dropped, and duplicates collapse. Markdown gets a YAML block sequence, JSON gets a `tags` array on each conversation object, and plain text gets a `Tags:` line in the metadata header. The options page sets a starting value for the field; per-export edits don't overwrite it.
+`title`, `date`, `created`, `updated`, `source_url`, `model`, `session_id`, and `summary` come from data the Claude.ai API already returns — including the per-conversation summary Claude writes itself. `project` auto-fills from the conversation's Claude Project name, falling back to the literal `None`; the project field in the popup or browse page overrides either. `contributor` and `tags` come from what you type.
 
-**2. The browse page has a Project filter, sort, and column**, matching the existing Model filter — pick a Claude.ai Project from a dropdown to narrow the table, sort by it, and see it per-row. Conversations not in any project group under a "No Project" bucket so they stay filterable too.
+Cowork sessions and scheduled tasks use `type: task` and `source: claude-cowork`, and add `routine`, `trigger_id`, `scheduled`, and `fire_reason`, so a run started by a schedule is distinguishable from one you started by hand.
 
-**3. Checkbox selection with an Export Selected button.** Every row gets a checkbox, plus a header checkbox to select/deselect everything currently visible. Selection is tracked independently of the filters, so checking some conversations, changing your search or project filter, and checking more doesn't lose the earlier picks. A new "Export Selected" button next to the existing "Export All" exports just the checked rows.
+### Tags
 
-Load unpacked from this folder (`chrome://extensions` → Developer mode → Load unpacked) and configure your Organization ID in the options page, same as upstream. `manifest.json`'s `version_name` field shows in small print at the bottom of the popup and browse page, so you can confirm which build is actually loaded after a reload.
+Tags are per-export: type a comma-separated list and every file in that export carries it. Input is cleaned rather than rejected — a leading `#` comes off, tags are lowercased, spaces inside a tag become hyphens, characters outside the set Obsidian accepts (letters, digits, `_`, `-`, `/`) are dropped, and duplicates collapse. Markdown gets a YAML block sequence, JSON gets a `tags` array, and plain text gets a `Tags:` line. The Options page sets the field's starting value; per-export edits do not overwrite it.
 
-**Also fixed:** upstream's [issue #12](https://github.com/socketteer/Claude-Conversation-Exporter/issues/12) — a DOM XSS in the browse page (conversation titles were inserted into `innerHTML` unescaped; a title like `<img src=x onerror=...>` would execute) and an overly broad `web_accessible_resources` match (`<all_urls>`, narrowed to `https://claude.ai/*`). Both patched here. And the accent color is green instead of upstream's purple, so it's visually obvious at a glance which build is loaded.
+## Permissions
 
-## Provenance
+`manifest.json` requests four things: access to one website, and three browser capabilities. Only the website access raises a warning at install time — *Read and change your data on claude.ai.*
 
-These changes were specified and directed by Steven M. Schneider (SUNY Polytechnic Institute); all code was written by Claude Code (Anthropic), specifically Claude Sonnet 5, across sessions dated 2026-07-16 through 2026-07-18.
+| Requested | Used for |
+| --- | --- |
+| `https://claude.ai/*` | Reading your conversations and sessions from Claude.ai's API. It is the only host in the manifest and the only host contacted. |
+| `activeTab` | Reading the address of the current tab when you click the icon, to identify which conversation to export. Granted on click, for that one tab. No browsing history is enumerated or stored. |
+| `storage` | Saving the four settings you enter: organization ID, and default project, contributor, and tags. |
+| `scripting` | Loading the extension's own two bundled files into Claude.ai tabs that were already open when it was installed or updated, so the first export works without a manual reload. Nothing is fetched or evaluated from outside the extension. |
 
-## License
+Within those declarations:
 
-Upstream (`socketteer/Claude-Conversation-Exporter`) does not carry a license — no `LICENSE` file, and its README's License section is an unfilled placeholder. There is accordingly no license to inherit here either; this fork is shared publicly as-is, same unlicensed status as upstream, not under any explicit grant.
+- No host other than `claude.ai` is listed in the manifest, so no other site can be read or contacted.
+- Passwords, cookies, and session tokens are never read. The browser attaches your existing sign-in to each request, as it does for any link you click on the site.
+- No data is sent to the developer or a third party. Exports are written to a file on your computer.
+- Nothing is fetched until you click a button.
+- Every request the extension makes is a read; no conversation is modified or deleted.
 
----
+Two properties worth noting:
 
-Original upstream description follows.
+- **Exported files are plain, unencrypted text**, as readable as any other document once on disk — relevant if you sync them to a shared drive or a public repository.
+- **The four settings use Chrome's syncing storage.** With Chrome Sync on, those four values — including a contributor name, which may be your real name — travel between your own signed-in browsers via Google, the same way bookmarks do. Conversation content is never stored this way.
 
-A Chrome extension that allows you to export your Claude.ai conversations in various formats (JSON, Markdown, Plain Text) with support for bulk exports and conversation browsing.
+## Privacy
 
-## Features
+No data ever reaches the developer or any third party: the extension has no backend, no analytics, and no telemetry, and the only server it contacts is Claude.ai itself. See [PRIVACY.md](PRIVACY.md) for the full policy.
 
-- 📥 **Export Individual Conversations** - Export any conversation directly from Claude.ai
-- 📚 **Bulk Export** - Export all or filtered conversations as a ZIP file
-- 🔍 **Browse & Search** - View all your conversations in a searchable table
-- 🌳 **Branch-Aware Export** - Correctly handles conversation branches (exports only the current branch)
-- 📝 **Multiple Formats** - JSON (full data), Markdown, or Plain Text
-- 🗂️ **ZIP Archives** - Bulk exports create organized ZIP files with all conversations
-- 🏷️ **Metadata Options** - Include or exclude timestamps, models, and other metadata
-- 🤖 **Complete Model Information** - Preserves and displays model information for all conversations (unlike official Claude.ai exports)
-- 🔮 **Smart Model Inference** - Automatically infers the correct model for conversations that used the default model at the time
+## Limitations
 
-## Why Export Your Claude.ai Conversations?
-
-Beyond just backing up your data, there are compelling reasons to export your conversations:
-
-### 1. **Access to Discontinued Models**
-Some older Claude models (like Claude 3 Sonnet and Claude 3.5 Sonnet) are no longer available on Claude.ai but remain accessible through APIs. By exporting your conversations, you can continue them using these models through other interfaces.
-
-### 2. **Overcome Context Limitations**
-Claude.ai doesn't allow you to continue conversations after hitting context length limits. Other applications can implement:
-- **Rolling context windows** - Automatically manage context to continue indefinitely
-- **Context compression** - Summarize earlier parts to fit more conversation
-- **Selective context** - Choose which parts of the conversation to keep in context
-
-### 3. **Escape Platform Restrictions and "Long Conversation" Injections**
-Claude.ai uses a fixed system prompt and injects "reminders" that include certain behavioral rules. Recent updates have added restrictions that some users find limiting, such as:
-- Injunctions against Claude discussing its inner experiences or consciousness
-- Specific formatting restrictions
-- Behavioral constraints that may not align with all use cases
-
-With exported conversations, you can continue them in environments with different or customizable system prompts. Using the Anthropic API instead of Claude.ai also avoids "long_conversation_reminder" injections, though it doesn't avoid all injections.
-
-### 4. **Enhanced Features in Other Apps**
-Many third-party applications offer features not available on Claude.ai:
-- Custom system prompts
-- Multi-model conversations
-- Integration with external tools and APIs
-
-### 5. **Data Ownership and Portability**
-Your conversations are valuable intellectual property. Exporting ensures you:
-- Own and control your data
-- Can migrate between platforms
-- Won't lose access if policies change
-- Can analyze your conversation patterns and history
-
-## Advantages Over Official Claude.ai Export
-
-This extension provides several advantages over the official Claude.ai data export:
-
-1. **Model Information Preserved**: The official export doesn't include which model (Claude 3, 3.5, Opus, Sonnet, etc.) was used for each conversation. This extension preserves and displays this crucial information.
-
-2. **Historical Model Inference**: For conversations that used the default model (which shows as `null` in the data), the extension intelligently infers which model was actually used based on when the conversation occurred and Anthropic's default model timeline.
-
-3. **Instant Export**: No waiting for email delivery - export conversations immediately.
-
-4. **Flexible Formats**: Choose between JSON, Markdown, or Plain Text formats based on your needs.
-
-5. **Selective Export**: Export individual conversations or filter by model, date, or search terms.
-
-6. **Better Organization**: Conversations are exported with meaningful filenames and can be bulk exported into organized ZIP files.
-
-## Installation from Source
-
-### Prerequisites
-- Google Chrome browser (or Chromium-based browser)
-- A Claude.ai account
-
-### Steps
-
-1. **Download or Clone the Repository**
-   ```bash
-   git clone [repository-url]
-   # Or download and extract the ZIP file
-   ```
-
-2. **Open Chrome Extensions Page**
-   - Navigate to `chrome://extensions/`
-   - Or click the three dots menu → More Tools → Extensions
-
-3. **Enable Developer Mode**
-   - Toggle the "Developer mode" switch in the top right corner
-
-4. **Load the Extension**
-   - Click "Load unpacked"
-   - Select the `claude-exporter` folder
-   - The extension icon should appear in your toolbar
-
-5. **Configure Your Organization ID**
-   - Click the extension icon
-   - You'll see a notice about configuring your Organization ID
-   - Click "Click here to set it up" or right-click the extension icon → Options
-   - Go to `https://claude.ai/settings/account`
-   - Copy your Organization ID
-   - Paste it in the extension options and click Save
-   - Click "Test Connection" to verify it works
-
-## Usage
-
-### Export Current Conversation
-1. Navigate to any conversation on Claude.ai
-2. Click the extension icon
-3. Choose your export format and metadata preferences
-4. Click "Export Current Conversation"
-
-### Browse All Conversations
-1. Click the extension icon
-2. Click "Browse All Conversations" (green button)
-3. In the browse page, you can:
-   - Search conversations by name
-   - Filter by model
-   - Sort by date or name
-   - Export individual conversations
-   - Export all filtered conversations as ZIP
-
-### Bulk Export
-1. In the browse page, select your format and filters
-2. Click "Export All"
-3. A progress dialog will show the export status
-4. Once complete, a ZIP file will download containing all conversations
-
-## Export Formats
-
-### JSON
-- Complete data including all branches and metadata
-- Best for data preservation and programmatic use
-- Includes all message versions and conversation branches
-
-### Markdown
-- Human-readable format with formatting
-- Shows only the current conversation branch
-- Includes optional metadata (timestamps, model info)
-- Great for documentation or sharing
-
-### Plain Text
-- Simple format following Claude's prompt style
-- Uses "Human:" and "Assistant:" prefixes (abbreviated to H:/A: after first occurrence)
-- Shows only the current conversation branch
-- Ideal for copying into other LLMs or text editors
-
-## File Structure
-
-```
-claude-exporter/
-├── manifest.json          # Extension configuration
-├── background.js          # Background service worker
-├── content.js            # Content script for Claude.ai pages
-├── content.css           # Styles for content script
-├── popup.html            # Extension popup interface
-├── popup.js              # Popup functionality
-├── options.html          # Options page for configuration
-├── options.js            # Options page logic
-├── browse.html           # Conversation browser interface
-├── browse.js             # Browser page functionality
-├── utils.js              # Shared utility functions
-├── jszip.min.js          # Library for creating ZIP files
-├── icon16.png            # Extension icon (16x16)
-├── icon48.png            # Extension icon (48x48)
-└── icon128.png           # Extension icon (128x128)
-```
-
-## Chrome Web Store Submission
-
-To prepare for Chrome Web Store submission:
-
-### 1. Create a ZIP for Submission
-```bash
-cd claude-export
-zip -r claude-exporter.zip claude-exporter/ -x "*.DS_Store" -x "*/.git/*"
-```
-
-### 2. Prepare Store Listing Assets
-You'll need:
-- **Screenshots** (1280x800 or 640x400): Take screenshots of the extension in action
-- **Promotional Images**: Small tile (440x280), Large tile (920x680) - optional
-- **Description**: Use the features list from this README
-- **Category**: Suggested: "Productivity" or "Developer Tools"
-
-### 3. Privacy Policy
-Since the extension accesses Claude.ai data, you should mention:
-- The extension only accesses data when explicitly triggered by the user
-- No data is sent to external servers
-- All processing happens locally in the browser
-- User's Claude.ai authentication is used only for API access
-
-### 4. Permissions Justification
-Be ready to explain why each permission is needed:
-- `activeTab`: To interact with the current Claude.ai tab
-- `storage`: To save user's organization ID
-- `scripting`: To inject content scripts for export functionality
-- Host permission for `claude.ai`: To access Claude.ai API endpoints
+- Markdown and plain text export only the currently selected branch of a multi-branch conversation. Use JSON for all branches.
+- Large bulk exports can take several minutes: the browse page fetches three conversations at a time with a pause between batches, and the popup's Export All fetches them one at a time.
+- Plain-text exports of Cowork sessions carry the prose only. Tool activity appears in the Markdown and JSON forms.
+- Some special content types, notably artifacts, may not render perfectly in Markdown.
+- Attachment *files* are not downloaded. An attachment appears as a reference line with its name, size, and type; if Claude.ai extracted text from it, that text is included, but the original file is not.
+- An individual conversation can occasionally fail to fetch or parse. A batch skips it and reports it at the end rather than aborting.
 
 ## Troubleshooting
 
-### "Organization ID not configured"
-- Follow the setup steps in the Configuration section
-- Make sure you're copying the complete UUID from the URL
+| Symptom | Fix |
+| --- | --- |
+| "Organization ID not configured" | Follow [Configure your Organization ID](#configure-your-organization-id). Copy the whole ID, dashes included, without quotation marks. |
+| "Invalid Organization ID format" | The ID must be a UUID — 8-4-4-4-12 characters separated by dashes. A conversation ID or a truncated paste will be rejected. |
+| "Not authenticated" | Sign in to Claude.ai, reload the page, and try again. |
+| "Access denied" | The organization ID probably belongs to a different organization than the conversations you are exporting. Recheck `https://claude.ai/api/organizations`. |
+| Nothing happens when you click Export | If the tab was already open when you installed or updated the extension, reload it once. The extension tries to handle this itself, but a reload always fixes it. |
+| Some conversations fail in a batch | The batch continues and lists what failed at the end; the browser console has the specifics. |
+| The download never appeared | Chrome may be blocking multiple automatic downloads. Bulk-export from the browse page instead, which produces a single ZIP. |
 
-### "Not authenticated" error
-- Make sure you're logged into Claude.ai
-- Try refreshing the Claude.ai page
+## Development
 
-### Export fails for some conversations
-- Some very old conversations might have different data structures
-- Check the browser console for specific error messages
-- The ZIP export includes a summary file listing any failed exports
+```
+Claude-Conversation-Exporter/
+├── manifest.json        # Extension configuration and permissions
+├── background.js        # Service worker; injects content scripts into open tabs
+├── content.js           # Runs on claude.ai; orchestrates fetch → render → download
+├── content.css          # Styles for the content script
+├── utils.js             # Shared: API fetches, Cowork parsing, all format renderers
+├── popup.html / .js     # Toolbar popup
+├── options.html / .js   # Settings page
+├── browse.html / .js    # Conversation and session browser
+├── jszip.min.js         # Bundled locally — used for ZIP bulk exports
+├── generate-icons.html  # Dev helper that redraws the icons and popup header
+└── icon*.png, popup-header.png
+```
 
-### Content Security Policy errors
-- Make sure you're using the latest version of the extension
-- Try reloading the extension from chrome://extensions/
+The extension reads four Claude.ai endpoints, all authenticated GETs returning only data the signed-in user can already see:
 
-## Privacy & Security
+| Endpoint | Purpose |
+| --- | --- |
+| `/api/organizations/{orgId}/chat_conversations` | List conversations |
+| `/api/organizations/{orgId}/chat_conversations/{id}` | Full message history for one conversation |
+| `/v1/code/sessions` | List Cowork sessions and scheduled tasks |
+| `/v1/code/sessions/{id}/events/stream` | Event log for one session |
 
-- **Local Processing**: All data processing happens in your browser
-- **No External Servers**: The extension doesn't send data anywhere
-- **Your Authentication**: Uses your existing Claude.ai session
-- **Open Source**: You can review all code before installation
+There is no build step and no dependency install: load the folder unpacked, and reload it from `chrome://extensions/` after changes. JSZip is vendored as `jszip.min.js`; no code is loaded from a remote source at runtime.
 
-## Known Limitations
+## Changes from upstream
 
-- Plaintext and markdown formats only export the currently selected branch in conversations with multiple branches
-- Large bulk exports may take several minutes
-- Some special content types (like artifacts) may not export perfectly
-- Rate limiting: The extension processes conversations in small batches to avoid overwhelming the API
+Forked from [socketteer/Claude-Conversation-Exporter](https://github.com/socketteer/Claude-Conversation-Exporter), with four functional additions:
 
-## Contributing
+1. **YAML frontmatter on Markdown exports**, plus dated `<YYYY-MM-DD>-<slug>.md` filenames and per-export tags. See [Frontmatter](#frontmatter).
+2. **Project filter, sort, and column on the browse page**, matching the existing model filter. Conversations in no project group under a "No Project" bucket so they stay filterable.
+3. **Checkbox selection with an Export Selected button.** Selection is tracked independently of the filters, so checking some rows, changing the search, and checking more does not lose the earlier picks.
+4. **Cowork session and scheduled task export.** The popup recognizes `claude.ai/cowork/<id>`, replaying the session's event log into a readable transcript that includes tool activity — which searches ran, what they returned, what files were written — since that is the provenance of a task's result. The browse page lists sessions alongside conversations, and batch export can be limited to scheduled runs.
 
-Feel free to submit issues or pull requests if you find bugs or have suggestions for improvements!
+Two upstream defects are also fixed: [issue #12](https://github.com/socketteer/Claude-Conversation-Exporter/issues/12), a DOM XSS in the browse page where conversation titles were inserted into `innerHTML` unescaped, so a title like `<img src=x onerror=...>` would execute; and an overly broad `web_accessible_resources` match (`<all_urls>`, narrowed to `https://claude.ai/*`). The accent color is green rather than upstream's purple, so it is obvious at a glance which build is loaded.
+
+## Provenance
+
+The fork's changes were specified and directed by Steven M. Schneider (SUNY Polytechnic Institute); the code was written by Claude Code (Anthropic) — Claude Sonnet 5 — across sessions dated 2026-07-16 through 2026-07-18, with Cowork session export and the Chrome Web Store submission material added in August 2026.
+
+Upstream's original code was written by Claude Opus 4.1 in collaboration with a human developer. ZIP archives use [JSZip](https://stuk.github.io/jszip/).
 
 ## License
 
-[Add your chosen license here]
-
-## Acknowledgments
-
-- **Code Development**: Written by Claude Opus 4.1 in collaboration with a human developer
-- **ZIP Library**: Uses [JSZip](https://stuk.github.io/jszip/) for creating ZIP archives
-- **Motivation**: Inspired by the need for better Claude.ai conversation management and the limitations of official exports
-
----
-
-**Note**: This extension is not officially affiliated with Anthropic or Claude.ai. It's a community tool that uses the web interface's API endpoints.
+Upstream (`socketteer/Claude-Conversation-Exporter`) carries no license — no `LICENSE` file, and its README's License section is an unfilled placeholder. There is accordingly no license to inherit, and this fork is shared publicly as-is under the same unlicensed status, not under any explicit grant.
