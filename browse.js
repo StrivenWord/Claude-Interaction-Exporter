@@ -12,6 +12,10 @@ let selectedIds = new Set();
 // different resource with a different transcript format. See utils.js.
 let allTasks = [];
 
+// Session id to whether a schedule fired it, filled in as sessions are checked.
+let taskSchedules = new Map();
+let resolvingSchedules = false;
+
 // Bucket label for conversations not attached to any Claude.ai Project
 const NO_PROJECT = 'No Project';
 
@@ -182,13 +186,86 @@ async function loadTasks() {
   }
 }
 
+// Whether a session was fired by a schedule: true, false, or null when it
+// hasn't been determined yet. The list response doesn't carry it unless it
+// happens to include a trigger, so it is resolved per session and remembered.
+function taskScheduledState(task) {
+  if (taskSchedules.has(task.id)) {
+    return taskSchedules.get(task.id);
+  }
+  return task.trigger_id ? true : null;
+}
+
+function scheduledOnlyChecked() {
+  return document.getElementById('scheduledOnly').checked;
+}
+
+// Sessions known not to be scheduled are hidden; undetermined ones stay visible
+// rather than being hidden on a guess.
+function visibleTasks() {
+  if (!scheduledOnlyChecked()) {
+    return allTasks;
+  }
+  return allTasks.filter(task => taskScheduledState(task) !== false);
+}
+
+// Reading one page of a session says whether a schedule fired it. Done on
+// demand rather than at load, since it costs a request per session. Results
+// accumulate, so toggling the filter again is free.
+async function resolveTaskSchedules() {
+  if (resolvingSchedules) return;
+
+  const pending = allTasks.filter(task => taskScheduledState(task) === null);
+  if (!pending.length) return;
+
+  resolvingSchedules = true;
+  const stats = document.getElementById('tasksStats');
+  const batchSize = 3;
+  let checked = 0;
+
+  try {
+    for (let i = 0; i < pending.length; i += batchSize) {
+      const batch = pending.slice(i, i + batchSize);
+      stats.textContent = `checking ${checked + 1}–${checked + batch.length} of ${pending.length}…`;
+
+      await Promise.all(batch.map(async (task) => {
+        try {
+          taskSchedules.set(task.id, await fetchCoworkScheduledFlag(task.id));
+        } catch (error) {
+          console.error(`Could not determine whether ${task.id} was scheduled:`, error);
+        }
+      }));
+
+      checked += batch.length;
+      displayTasks();
+
+      if (checked < pending.length) {
+        stats.textContent = `checked ${checked} of ${pending.length}…`;
+        await new Promise(resolve => setTimeout(resolve, 200));
+      }
+    }
+  } finally {
+    resolvingSchedules = false;
+    displayTasks();
+  }
+}
+
 // Display Cowork sessions in their own table
 function displayTasks() {
   const tasksContent = document.getElementById('tasksContent');
-  document.getElementById('tasksStats').textContent = `${allTasks.length} sessions`;
+  const shown = visibleTasks();
+  const stats = document.getElementById('tasksStats');
+
+  stats.textContent = shown.length === allTasks.length
+    ? `${allTasks.length} sessions`
+    : `${shown.length} of ${allTasks.length} sessions`;
 
   if (allTasks.length === 0) {
     tasksContent.innerHTML = '<div class="no-results">No Cowork sessions found</div>';
+    return;
+  }
+  if (shown.length === 0) {
+    tasksContent.innerHTML = '<div class="no-results">No scheduled runs among these sessions</div>';
     return;
   }
 
@@ -199,6 +276,7 @@ function displayTasks() {
           <th>Session</th>
           <th>Created</th>
           <th>Last Active</th>
+          <th>Scheduled</th>
           <th>Status</th>
           <th>Actions</th>
         </tr>
@@ -206,8 +284,10 @@ function displayTasks() {
       <tbody>
   `;
 
-  allTasks.forEach(task => {
+  shown.forEach(task => {
     const safeTitle = escapeHtml(task.title);
+    const state = taskScheduledState(task);
+    const scheduled = state === true ? 'Yes' : state === false ? 'No' : '—';
 
     html += `
       <tr data-id="${task.id}">
@@ -220,6 +300,7 @@ function displayTasks() {
         </td>
         <td class="date">${task.created_at ? new Date(task.created_at).toLocaleDateString() : '—'}</td>
         <td class="date">${task.updated_at ? new Date(task.updated_at).toLocaleDateString() : '—'}</td>
+        <td title="${state === null ? 'Not yet determined' : 'From the session\'s first event'}">${scheduled}</td>
         <td>${escapeHtml(task.status)}</td>
         <td>
           <div class="actions">
@@ -601,10 +682,12 @@ async function exportSelected() {
 // Export every listed Cowork session, into their own folder in the ZIP so a
 // task and a conversation sharing a date and title can't collide.
 async function exportAllTasks() {
-  const scheduledOnly = document.getElementById('scheduledOnly').checked;
+  const scheduledOnly = scheduledOnlyChecked();
 
   await exportBatch({
-    items: allTasks,
+    // Start from what the table shows, so sessions already known not to be
+    // scheduled aren't fetched only to be discarded.
+    items: visibleTasks(),
     buttonId: 'exportAllTasksBtn',
     defaultLabel: 'Export All Tasks',
     noun: 'tasks',
@@ -842,4 +925,13 @@ function setupEventListeners() {
 
   // Export all tasks button
   document.getElementById('exportAllTasksBtn').addEventListener('click', exportAllTasks);
+
+  // Scheduled-only filter. Turning it on has to check any sessions whose origin
+  // isn't known yet, which the list response doesn't tell us.
+  document.getElementById('scheduledOnly').addEventListener('change', async () => {
+    displayTasks();
+    if (scheduledOnlyChecked()) {
+      await resolveTaskSchedules();
+    }
+  });
 }

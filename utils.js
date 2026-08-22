@@ -488,6 +488,15 @@ async function fetchCoworkSession(sessionId) {
   return summariseCoworkSession(sessionId, events);
 }
 
+// Whether a run was fired by a schedule is recorded only on the session's first
+// event, so this reads one page instead of replaying the whole log — enough to
+// tell a task from a session someone started by hand.
+async function fetchCoworkScheduledFlag(sessionId) {
+  const events = await fetchCoworkPage(sessionId, 0);
+  const kickoff = events.find(event => event.event_type === 'user');
+  return Boolean(kickoff && kickoff.payload && kickoff.payload.inbound_origin === 'trigger_fire');
+}
+
 // The scheduler appends its own context to the prompt it fires. That belongs in
 // frontmatter, not in the transcript body.
 function stripSystemReminders(text) {
@@ -629,7 +638,15 @@ async function fetchCoworkList() {
     throw new Error(`${response.status}${detail ? ` — ${detail}` : ''}`);
   }
 
-  return normalizeCoworkList(await response.json());
+  const payload = await response.json();
+  const rows = normalizeCoworkList(payload);
+
+  // This response's field names aren't documented; log one raw row so a wrong
+  // guess in normalizeCoworkList is visible rather than silently blank.
+  const sample = Array.isArray(payload) ? payload[0] : payload && (payload.data || payload.sessions || payload.results || [])[0];
+  console.log('Cowork list: %d sessions, first raw row:', rows.length, sample);
+
+  return rows;
 }
 
 // The session list is read for its ids; titles and timestamps here are only
