@@ -1,9 +1,9 @@
 {
     "manifest_version": 3,
     "name": "Conversation Frontgraph Exporter",
-    "version": "1.4.1",
-    "version_name": "1.4.1 — 2026-07-18 (fix upstream #12: XSS + manifest scope; green theme)",
-    "description": "Export your Claude.ai conversations with full message history and frontgraph YAML frontmatter (the frontmatter is the graph)",
+    "version": "1.5.2",
+    "version_name": "1.5.2 — 2026-08-21 (export Cowork sessions and scheduled tasks)",
+    "description": "Export your Claude.ai conversations and scheduled tasks with full message history and frontgraph YAML frontmatter (the frontmatter is the graph)",
       "permissions": [
     "activeTab",
     "storage",

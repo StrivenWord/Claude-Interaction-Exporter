@@ -4,93 +4,64 @@
 // Like utils.js, this file is injected twice — by the manifest and again by
 // background.js — so it must stay free of top-level const/let and register its
 // message listener only once. See the guard at the bottom of the file.
+//
+// inferModel, the Cowork parsers and every format renderer live in utils.js,
+// which the manifest loads as a content script ahead of this file.
 
-// Default model timeline for null models
-var DEFAULT_MODEL_TIMELINE = [
-  { date: new Date('2024-01-01'), model: 'claude-3-sonnet-20240229' }, // Before June 20, 2024
-  { date: new Date('2024-06-20'), model: 'claude-3-5-sonnet-20240620' }, // Starting June 20, 2024
-  { date: new Date('2024-10-22'), model: 'claude-3-5-sonnet-20241022' }, // Starting October 22, 2024
-  { date: new Date('2025-02-29'), model: 'claude-3-7-sonnet-20250219' }, // Starting February 29, 2025
-  { date: new Date('2025-05-14'), model: 'claude-sonnet-4-20250514' }, // Starting May 14, 2025
-  { date: new Date('2025-09-29'), model: 'claude-sonnet-4-5-20250929' }, // Starting September 29, 2025
-  { date: new Date('2026-02-17'), model: 'claude-sonnet-4-6' } // Starting February 17, 2026
-];
+// Fetch conversation data
+async function fetchConversation(orgId, conversationId) {
+  const url = `https://claude.ai/api/organizations/${orgId}/chat_conversations/${conversationId}?tree=True&rendering_mode=messages&render_all_tools=true`;
 
-// Infer model for conversations with null model based on date
-function inferModel(conversation) {
-  if (conversation.model) {
-    return conversation.model;
-  }
-  
-  // Use created_at date to determine which default model was active
-  const conversationDate = new Date(conversation.created_at);
-  
-  // Find the appropriate model based on the conversation date
-  // Start from the end and work backwards to find the right period
-  for (let i = DEFAULT_MODEL_TIMELINE.length - 1; i >= 0; i--) {
-    if (conversationDate >= DEFAULT_MODEL_TIMELINE[i].date) {
-      return DEFAULT_MODEL_TIMELINE[i].model;
+  const response = await fetch(url, {
+    credentials: 'include',
+    headers: {
+      'Accept': 'application/json',
     }
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch conversation: ${response.status}`);
   }
-  
-  // If date is before all known dates, use the first model
-  return DEFAULT_MODEL_TIMELINE[0].model;
+
+  return await response.json();
 }
-  
-  // Fetch conversation data
-  async function fetchConversation(orgId, conversationId) {
-    const url = `https://claude.ai/api/organizations/${orgId}/chat_conversations/${conversationId}?tree=True&rendering_mode=messages&render_all_tools=true`;
-    
-    const response = await fetch(url, {
-      credentials: 'include',
-      headers: {
-        'Accept': 'application/json',
-      }
-    });
-    
-    if (!response.ok) {
-      throw new Error(`Failed to fetch conversation: ${response.status}`);
-    }
-    
-    return await response.json();
-  }
-  
-  // Fetch all conversations
-  async function fetchAllConversations(orgId) {
-    const url = `https://claude.ai/api/organizations/${orgId}/chat_conversations`;
-    
-    const response = await fetch(url, {
-      credentials: 'include',
-      headers: {
-        'Accept': 'application/json',
-      }
-    });
-    
-    if (!response.ok) {
-      throw new Error(`Failed to fetch conversations: ${response.status}`);
-    }
-    
-    return await response.json();
-  }
-  
-  // getCurrentBranch, convertToMarkdown, convertToText, downloadFile,
-  // and the frontgraph frontmatter helpers all come from utils.js, which the
-  // manifest loads as a content script ahead of this file.
 
-  // Handle messages from popup
+// Fetch all conversations
+async function fetchAllConversations(orgId) {
+  const url = `https://claude.ai/api/organizations/${orgId}/chat_conversations`;
+
+  const response = await fetch(url, {
+    credentials: 'include',
+    headers: {
+      'Accept': 'application/json',
+    }
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch conversations: ${response.status}`);
+  }
+
+  return await response.json();
+}
+
+// Cowork endpoints live under /v1/code rather than the org-scoped /api tree.
+// Listing sessions and replaying one are both owned by utils.js —
+// fetchCoworkList and fetchCoworkSession — since the browse page needs them too.
+
+// Handle messages from popup
 function handleExportMessage(request, sender, sendResponse) {
   if (request.action === 'exportConversation') {
     console.log('Export conversation request received:', request);
-    
+
     fetchConversation(request.orgId, request.conversationId)
       .then(data => {
         console.log('Conversation data fetched successfully:', data);
-        
+
         // Infer model if null
         data.model = inferModel(data);
-        
+
         let content, filename, type;
-        
+
         const exportOpts = { project: request.project, contributor: request.contributor, tags: request.tags };
 
         switch (request.format) {
@@ -109,30 +80,30 @@ function handleExportMessage(request, sender, sendResponse) {
             filename = `claude-conversation-${data.name || request.conversationId}.json`;
             type = 'application/json';
         }
-        
+
         console.log('Downloading file:', filename);
         downloadFile(content, filename, type);
         sendResponse({ success: true });
       })
       .catch(error => {
         console.error('Export conversation error:', error);
-        sendResponse({ 
-          success: false, 
+        sendResponse({
+          success: false,
           error: error.message,
-          details: error.stack 
+          details: error.stack
         });
       });
-    
+
     return true;
   }
-    
-      if (request.action === 'exportAllConversations') {
+
+  if (request.action === 'exportAllConversations') {
     console.log('Export all conversations request received:', request);
-    
+
     fetchAllConversations(request.orgId)
       .then(async conversations => {
         console.log(`Fetched ${conversations.length} conversations`);
-        
+
         if (request.format === 'json') {
           // For JSON, export as a single file with all conversations
           const filename = `claude-all-conversations-${new Date().toISOString().split('T')[0]}.json`;
@@ -144,15 +115,15 @@ function handleExportMessage(request, sender, sendResponse) {
           // For other formats, create individual files
           let count = 0;
           let errors = [];
-          
+
           for (const conv of conversations) {
             try {
               console.log(`Fetching full conversation ${count + 1}/${conversations.length}: ${conv.uuid}`);
               const fullConv = await fetchConversation(request.orgId, conv.uuid);
-              
+
               // Infer model if null
               fullConv.model = inferModel(fullConv);
-              
+
               let content, filename, type;
               const exportOpts = { project: request.project, contributor: request.contributor, tags: request.tags };
 
@@ -165,10 +136,10 @@ function handleExportMessage(request, sender, sendResponse) {
                 filename = `claude-${conv.name || conv.uuid}.txt`;
                 type = 'text/plain';
               }
-              
+
               downloadFile(content, filename, type);
               count++;
-              
+
               // Add a small delay to avoid overwhelming the API
               await new Promise(resolve => setTimeout(resolve, 500));
             } catch (error) {
@@ -176,13 +147,13 @@ function handleExportMessage(request, sender, sendResponse) {
               errors.push(`${conv.name || conv.uuid}: ${error.message}`);
             }
           }
-          
+
           if (errors.length > 0) {
             console.warn('Some conversations failed to export:', errors);
-            sendResponse({ 
-              success: true, 
-              count, 
-              warnings: `Exported ${count}/${conversations.length} conversations. Some failed: ${errors.join('; ')}` 
+            sendResponse({
+              success: true,
+              count,
+              warnings: `Exported ${count}/${conversations.length} conversations. Some failed: ${errors.join('; ')}`
             });
           } else {
             sendResponse({ success: true, count });
@@ -191,10 +162,100 @@ function handleExportMessage(request, sender, sendResponse) {
       })
       .catch(error => {
         console.error('Export all conversations error:', error);
-        sendResponse({ 
-          success: false, 
+        sendResponse({
+          success: false,
           error: error.message,
-          details: error.stack 
+          details: error.stack
+        });
+      });
+
+    return true;
+  }
+
+  if (request.action === 'exportTask') {
+    console.log('Export task request received:', request);
+
+    fetchCoworkSession(request.sessionId)
+      .then(session => {
+        console.log(`Task log replayed: ${session.events.length} events, ${session.turns.length} turns`);
+
+        const { content, filename, type } = renderTaskExport(session, request.format, {
+          includeMetadata: request.includeMetadata,
+          project: request.project,
+          contributor: request.contributor,
+          tags: request.tags
+        });
+
+        console.log('Downloading file:', filename);
+        downloadFile(content, filename, type);
+        sendResponse({ success: true });
+      })
+      .catch(error => {
+        console.error('Export task error:', error);
+        sendResponse({
+          success: false,
+          error: error.message,
+          details: error.stack
+        });
+      });
+
+    return true;
+  }
+
+  if (request.action === 'exportAllTasks') {
+    console.log('Export all tasks request received:', request);
+
+    fetchCoworkList()
+      .then(async rows => {
+        console.log(`Fetched ${rows.length} Cowork sessions`);
+
+        let count = 0;
+        const errors = [];
+
+        for (const row of rows) {
+          try {
+            const session = await fetchCoworkSession(row.id);
+
+            // Only scheduled runs are tasks; the same list carries sessions
+            // started by hand, which the conversation exports don't cover but
+            // aren't what this action was asked for.
+            if (request.scheduledOnly && !session.scheduled) continue;
+
+            const { content, filename, type } = renderTaskExport(session, request.format, {
+              includeMetadata: request.includeMetadata,
+              project: request.project,
+              contributor: request.contributor,
+              tags: request.tags
+            });
+
+            downloadFile(content, filename, type);
+            count++;
+
+            // Add a small delay to avoid overwhelming the API
+            await new Promise(resolve => setTimeout(resolve, 500));
+          } catch (error) {
+            console.error(`Failed to export task ${row.id}:`, error);
+            errors.push(`${row.title || row.id}: ${error.message}`);
+          }
+        }
+
+        if (errors.length > 0) {
+          console.warn('Some tasks failed to export:', errors);
+          sendResponse({
+            success: true,
+            count,
+            warnings: `Exported ${count}/${rows.length} tasks. Some failed: ${errors.join('; ')}`
+          });
+        } else {
+          sendResponse({ success: true, count });
+        }
+      })
+      .catch(error => {
+        console.error('Export all tasks error:', error);
+        sendResponse({
+          success: false,
+          error: error.message,
+          details: error.stack
         });
       });
 

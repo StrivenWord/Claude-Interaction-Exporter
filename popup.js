@@ -36,12 +36,24 @@ document.getElementById('openOptions').addEventListener('click', (e) => {
   chrome.runtime.openOptionsPage();
 });
   
-  // Get current conversation ID from URL
-  async function getCurrentConversationId() {
+  // The popup exports whatever the active tab is showing. Chat conversations
+  // live at /chat/<uuid>; tasks and other Cowork sessions at /cowork/<cse_id>,
+  // and are a separate resource with a separate export path.
+  async function getCurrentTarget() {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     const url = new URL(tab.url);
-    const match = url.pathname.match(/\/chat\/([a-f0-9-]+)/);
-    return match ? match[1] : null;
+
+    const chat = url.pathname.match(/\/chat\/([a-f0-9-]+)/);
+    if (chat) {
+      return { tab, kind: 'conversation', id: chat[1] };
+    }
+
+    const cowork = url.pathname.match(/\/cowork\/([A-Za-z0-9_-]+)/);
+    if (cowork) {
+      return { tab, kind: 'task', id: cowork[1] };
+    }
+
+    return { tab, kind: null, id: null };
   }
   
   // Show status message
@@ -66,41 +78,42 @@ document.getElementById('exportCurrent').addEventListener('click', async () => {
   
   try {
     const orgId = await getOrgId();
-    const conversationId = await getCurrentConversationId();
-    
-    if (!orgId) {
-      throw new Error('Organization ID not configured. Click the setup link above to configure it.');
-    }
-    if (!conversationId) {
-      throw new Error('Could not detect conversation ID. Make sure you are on a Claude.ai conversation page.');
-    }
-    
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    
+    const { tab, kind, id } = await getCurrentTarget();
+
     // Check if we're on Claude.ai
     if (!tab.url.includes('claude.ai')) {
-      throw new Error('Please navigate to a Claude.ai conversation page first.');
+      throw new Error('Please navigate to a Claude.ai conversation or task page first.');
     }
-      
-          chrome.tabs.sendMessage(tab.id, {
-      action: 'exportConversation',
-      conversationId,
-      orgId,
+    if (!kind) {
+      throw new Error('Could not detect a conversation or Cowork session. Make sure you are on a Claude.ai conversation or task page.');
+    }
+    // Only the org-scoped conversation endpoint needs the organization ID.
+    if (kind === 'conversation' && !orgId) {
+      throw new Error('Organization ID not configured. Click the setup link above to configure it.');
+    }
+
+    const common = {
       format: document.getElementById('format').value,
       includeMetadata: document.getElementById('includeMetadata').checked,
       project: document.getElementById('project').value.trim(),
       contributor: document.getElementById('contributor').value.trim(),
       tags: document.getElementById('tags').value.trim()
-    }, (response) => {
+    };
+
+    const message = kind === 'task'
+      ? { action: 'exportTask', sessionId: id, ...common }
+      : { action: 'exportConversation', conversationId: id, orgId, ...common };
+
+    chrome.tabs.sendMessage(tab.id, message, (response) => {
       if (chrome.runtime.lastError) {
         console.error('Chrome runtime error:', chrome.runtime.lastError);
         showStatus(`Error: ${chrome.runtime.lastError.message}`, 'error');
         button.disabled = false;
         return;
       }
-      
+
       if (response?.success) {
-        showStatus('Conversation exported successfully!', 'success');
+        showStatus(`${kind === 'task' ? 'Task' : 'Conversation'} exported successfully!`, 'success');
       } else {
         const errorMsg = response?.error || 'Export failed';
         console.error('Export failed:', errorMsg, response?.details);

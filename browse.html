@@ -467,6 +467,30 @@
         </div>
       </div>
     </div>
+
+    <!-- Tasks run as Cowork sessions, a separate resource from chat
+         conversations, so they get their own table rather than extra columns
+         the conversation rows can't fill. -->
+    <h2 class="section-heading">
+      Cowork Sessions &amp; Tasks
+      <span class="section-stats" id="tasksStats">Loading...</span>
+      <label class="section-option">
+        <input type="checkbox" id="scheduledOnly" checked>
+        Scheduled runs only
+      </label>
+      <button class="export-all-btn" id="exportAllTasksBtn" disabled>
+        Export All Tasks
+      </button>
+    </h2>
+
+    <div class="conversations-table">
+      <div id="tasksContent">
+        <div class="loading">
+          <div class="spinner"></div>
+          <div>Loading Cowork sessions...</div>
+        </div>
+      </div>
+    </div>
   </div>
   
   <!-- Export options moved to header for better visibility -->
@@ -491,6 +515,30 @@
       border: 1px solid #ccc;
       border-radius: 3px;
       font-size: 13px;
+    }
+    .section-heading {
+      display: flex;
+      align-items: center;
+      gap: 15px;
+      margin: 30px 0 12px;
+      font-size: 18px;
+      color: #333;
+    }
+    .section-stats {
+      font-size: 13px;
+      font-weight: normal;
+      color: #666;
+    }
+    .section-option {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 13px;
+      font-weight: normal;
+      color: #555;
+    }
+    .section-heading .export-all-btn {
+      margin-left: auto;
     }
   </style>
   

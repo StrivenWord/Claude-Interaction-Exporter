@@ -8,6 +8,10 @@ let currentSort = 'updated_desc';
 // rendered/filtered so selections survive search/filter/sort changes.
 let selectedIds = new Set();
 
+// Cowork sessions, listed separately from conversations because they are a
+// different resource with a different transcript format. See utils.js.
+let allTasks = [];
+
 // Bucket label for conversations not attached to any Claude.ai Project
 const NO_PROJECT = 'No Project';
 
@@ -38,18 +42,6 @@ const MODEL_DISPLAY_NAMES = {
   'claude-opus-4-6': 'Claude Opus 4.6'
 };
 
-// Default model timeline for null models
-// Each entry represents when that model became the default
-const DEFAULT_MODEL_TIMELINE = [
-  { date: new Date('2024-01-01'), model: 'claude-3-sonnet-20240229' }, // Before June 20, 2024
-  { date: new Date('2024-06-20'), model: 'claude-3-5-sonnet-20240620' }, // Starting June 20, 2024
-  { date: new Date('2024-10-22'), model: 'claude-3-5-sonnet-20241022' }, // Starting October 22, 2024
-  { date: new Date('2025-02-24'), model: 'claude-3-7-sonnet-20250219' }, // Starting February 24, 2025
-  { date: new Date('2025-05-22'), model: 'claude-sonnet-4-20250514' }, // Starting May 22, 2025
-  { date: new Date('2025-09-29'), model: 'claude-sonnet-4-5-20250929' }, // Starting September 29, 2025
-  { date: new Date('2026-02-17'), model: 'claude-sonnet-4-6' } // Starting February 17, 2026
-];
-
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', async () => {
   await loadOrgId();
@@ -57,6 +49,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadDefaultContributor();
   await loadDefaultTags();
   await loadConversations();
+  await loadTasks();
   setupEventListeners();
 
   const manifest = chrome.runtime.getManifest();
@@ -103,25 +96,15 @@ async function loadDefaultTags() {
   });
 }
 
-// Infer model for conversations with null model based on date
-function inferModel(conversation) {
-  if (conversation.model) {
-    return conversation.model;
-  }
-  
-  // Use created_at date to determine which default model was active
-  const conversationDate = new Date(conversation.created_at);
-  
-  // Find the appropriate model based on the conversation date
-  // Start from the end and work backwards to find the right period
-  for (let i = DEFAULT_MODEL_TIMELINE.length - 1; i >= 0; i--) {
-    if (conversationDate >= DEFAULT_MODEL_TIMELINE[i].date) {
-      return DEFAULT_MODEL_TIMELINE[i].model;
-    }
-  }
-  
-  // If date is before all known dates, use the first model
-  return DEFAULT_MODEL_TIMELINE[0].model;
+// Read the export settings shared by every export path on this page.
+function exportOptions() {
+  return {
+    format: document.getElementById('exportFormat').value,
+    includeMetadata: document.getElementById('includeMetadata').checked,
+    project: document.getElementById('exportProject').value.trim(),
+    contributor: document.getElementById('exportContributor').value.trim(),
+    tags: document.getElementById('exportTags').value.trim()
+  };
 }
 
 // Load organization ID from storage
@@ -177,6 +160,99 @@ async function loadConversations() {
     console.error('Error loading conversations:', error);
     showError(`Failed to load conversations: ${error.message}`);
   }
+}
+
+// Load Cowork sessions. These are listed for their ids and rough labels only:
+// whether a session was fired by a schedule, and its real title, come from
+// replaying its event log at export time.
+async function loadTasks() {
+  const tasksContent = document.getElementById('tasksContent');
+
+  try {
+    allTasks = await fetchCoworkList();
+    console.log(`Loaded ${allTasks.length} Cowork sessions`);
+
+    displayTasks();
+    document.getElementById('exportAllTasksBtn').disabled = allTasks.length === 0;
+
+  } catch (error) {
+    console.error('Error loading tasks:', error);
+    document.getElementById('tasksStats').textContent = 'unavailable';
+    tasksContent.innerHTML = `<div class="error">${escapeHtml(`Failed to load tasks: ${error.message}`)}</div>`;
+  }
+}
+
+// Display Cowork sessions in their own table
+function displayTasks() {
+  const tasksContent = document.getElementById('tasksContent');
+  document.getElementById('tasksStats').textContent = `${allTasks.length} sessions`;
+
+  if (allTasks.length === 0) {
+    tasksContent.innerHTML = '<div class="no-results">No Cowork sessions found</div>';
+    return;
+  }
+
+  let html = `
+    <table>
+      <thead>
+        <tr>
+          <th>Session</th>
+          <th>Created</th>
+          <th>Last Active</th>
+          <th>Status</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+  `;
+
+  allTasks.forEach(task => {
+    const safeTitle = escapeHtml(task.title);
+
+    html += `
+      <tr data-id="${task.id}">
+        <td>
+          <div class="conversation-name">
+            <a href="https://claude.ai/cowork/${task.id}" target="_blank" title="${safeTitle}">
+              ${safeTitle}
+            </a>
+          </div>
+        </td>
+        <td class="date">${task.created_at ? new Date(task.created_at).toLocaleDateString() : '—'}</td>
+        <td class="date">${task.updated_at ? new Date(task.updated_at).toLocaleDateString() : '—'}</td>
+        <td>${escapeHtml(task.status)}</td>
+        <td>
+          <div class="actions">
+            <button class="btn-small btn-export btn-export-task" data-id="${task.id}" data-name="${safeTitle}">
+              Export
+            </button>
+            <button class="btn-small btn-view btn-view-task" data-id="${task.id}">
+              View
+            </button>
+          </div>
+        </td>
+      </tr>
+    `;
+  });
+
+  html += `
+      </tbody>
+    </table>
+  `;
+
+  tasksContent.innerHTML = html;
+
+  document.querySelectorAll('.btn-export-task').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      exportTask(e.target.dataset.id, e.target.dataset.name);
+    });
+  });
+
+  document.querySelectorAll('.btn-view-task').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      window.open(`https://claude.ai/cowork/${e.target.dataset.id}`, '_blank');
+    });
+  });
 }
 
 // Populate model filter dropdown
@@ -420,58 +496,80 @@ function updateStats() {
   stats.textContent = text;
 }
 
+// Fetch one conversation's full message tree.
+async function fetchConversationDetail(conversationId) {
+  const response = await fetch(
+    `https://claude.ai/api/organizations/${orgId}/chat_conversations/${conversationId}?tree=True&rendering_mode=messages&render_all_tools=true`,
+    {
+      credentials: 'include',
+      headers: {
+        'Accept': 'application/json',
+      }
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch conversation: ${response.status}`);
+  }
+
+  return await response.json();
+}
+
+// Reading one Cowork session takes several paged requests; fetchCoworkSession
+// in utils.js owns that loop.
+
 // Export single conversation
 async function exportConversation(conversationId, conversationName) {
-  const format = document.getElementById('exportFormat').value;
-  const includeMetadata = document.getElementById('includeMetadata').checked;
-  
+  const opts = exportOptions();
+
   try {
     showToast(`Exporting ${conversationName}...`);
-    
-    const response = await fetch(
-      `https://claude.ai/api/organizations/${orgId}/chat_conversations/${conversationId}?tree=True&rendering_mode=messages&render_all_tools=true`,
-      {
-        credentials: 'include',
-        headers: {
-          'Accept': 'application/json',
-        }
-      }
-    );
-    
-    if (!response.ok) {
-      throw new Error(`Failed to fetch conversation: ${response.status}`);
-    }
-    
-    const data = await response.json();
-    
+
+    const data = await fetchConversationDetail(conversationId);
+
     // Infer model if null
     data.model = inferModel(data);
-    
-    const project = document.getElementById('exportProject').value.trim();
-    const contributor = document.getElementById('exportContributor').value.trim();
-    const tags = document.getElementById('exportTags').value.trim();
 
     let content, filename, type;
-    switch (format) {
+    switch (opts.format) {
       case 'markdown':
-        content = convertToMarkdown(data, includeMetadata, { project, contributor, tags });
+        content = convertToMarkdown(data, opts.includeMetadata, opts);
         filename = buildFrontgraphFilename(data);
         type = 'text/markdown';
         break;
       case 'text':
-        content = convertToText(data, includeMetadata, { tags });
+        content = convertToText(data, opts.includeMetadata, opts);
         filename = `claude-${conversationName || conversationId}.txt`;
         type = 'text/plain';
         break;
       default:
-        content = JSON.stringify(withExportTags(data, tags), null, 2);
+        content = JSON.stringify(withExportTags(data, opts.tags), null, 2);
         filename = `claude-${conversationName || conversationId}.json`;
         type = 'application/json';
     }
-    
+
     downloadFile(content, filename, type);
     showToast(`Exported: ${conversationName}`);
-    
+
+  } catch (error) {
+    console.error('Export error:', error);
+    showToast(`Failed to export: ${error.message}`, true);
+  }
+}
+
+// Export single task
+async function exportTask(sessionId, sessionTitle) {
+  const opts = exportOptions();
+
+  try {
+    showToast(`Exporting ${sessionTitle}...`);
+
+    const session = await fetchCoworkSession(sessionId);
+    const { content, filename, type } = renderTaskExport(session, opts.format, opts);
+
+    downloadFile(content, filename, type);
+    showToast(`Exported: ${session.title}`);
+
   } catch (error) {
     console.error('Export error:', error);
     showToast(`Failed to export: ${error.message}`, true);
@@ -480,23 +578,81 @@ async function exportConversation(conversationId, conversationName) {
 
 // Export all conversations currently passing the search/model/project filters
 async function exportAllFiltered() {
-  await exportConversationsBatch(filteredConversations, 'exportAllBtn', 'Export All');
+  await exportBatch({
+    items: filteredConversations,
+    buttonId: 'exportAllBtn',
+    defaultLabel: 'Export All',
+    noun: 'conversations',
+    renderItem: renderConversationFile
+  });
 }
 
 // Export only the checked rows, regardless of what's currently filtered/visible
 async function exportSelected() {
-  const conversations = allConversations.filter(c => selectedIds.has(c.uuid));
-  await exportConversationsBatch(conversations, 'exportSelectedBtn', 'Export Selected');
+  await exportBatch({
+    items: allConversations.filter(c => selectedIds.has(c.uuid)),
+    buttonId: 'exportSelectedBtn',
+    defaultLabel: 'Export Selected',
+    noun: 'conversations',
+    renderItem: renderConversationFile
+  });
 }
 
-// Shared batch-export flow: fetches each conversation, converts, zips, downloads.
-async function exportConversationsBatch(conversations, buttonId, defaultLabel) {
-  const format = document.getElementById('exportFormat').value;
-  const includeMetadata = document.getElementById('includeMetadata').checked;
-  const project = document.getElementById('exportProject').value.trim();
-  const contributor = document.getElementById('exportContributor').value.trim();
-  const tags = document.getElementById('exportTags').value.trim();
+// Export every listed Cowork session, into their own folder in the ZIP so a
+// task and a conversation sharing a date and title can't collide.
+async function exportAllTasks() {
+  const scheduledOnly = document.getElementById('scheduledOnly').checked;
 
+  await exportBatch({
+    items: allTasks,
+    buttonId: 'exportAllTasksBtn',
+    defaultLabel: 'Export All Tasks',
+    noun: 'tasks',
+    folder: 'tasks/',
+    renderItem: async (row) => {
+      const session = await fetchCoworkSession(row.id);
+      // Whether a session was fired by a schedule is only knowable from its
+      // log, so this filter runs after the fetch rather than over the list.
+      if (scheduledOnly && !session.scheduled) return null;
+      const opts = exportOptions();
+      return renderTaskExport(session, opts.format, opts);
+    }
+  });
+}
+
+// One conversation row to one file, in whichever format the header selects.
+async function renderConversationFile(conv) {
+  const data = await fetchConversationDetail(conv.uuid);
+
+  // Infer model if null
+  data.model = inferModel(data);
+
+  const opts = exportOptions();
+  const safeName = sanitizeFilename(conv.name);
+
+  switch (opts.format) {
+    case 'markdown':
+      return {
+        content: convertToMarkdown(data, opts.includeMetadata, opts),
+        filename: buildFrontgraphFilename(data)
+      };
+    case 'text':
+      return {
+        content: convertToText(data, opts.includeMetadata, opts),
+        filename: `${safeName}.txt`
+      };
+    default:
+      return {
+        content: JSON.stringify(withExportTags(data, opts.tags), null, 2),
+        filename: `${safeName}.json`
+      };
+  }
+}
+
+// Shared batch-export flow: renders each item to a file, zips, downloads.
+// Callers differ only in renderItem, which returns {filename, content} or null
+// to leave an item out of the archive.
+async function exportBatch({ items, buttonId, defaultLabel, noun, folder = '', renderItem }) {
   const button = document.getElementById(buttonId);
   button.disabled = true;
   button.textContent = 'Preparing...';
@@ -507,113 +663,80 @@ async function exportConversationsBatch(conversations, buttonId, defaultLabel) {
   const progressText = document.getElementById('progressText');
   const progressStats = document.getElementById('progressStats');
   progressModal.style.display = 'block';
-  
+
   let cancelExport = false;
   const cancelButton = document.getElementById('cancelExport');
   cancelButton.onclick = () => {
     cancelExport = true;
     progressText.textContent = 'Cancelling...';
   };
-  
+
   try {
     // Create a new ZIP file
     const zip = new JSZip();
-    const total = conversations.length;
+    const total = items.length;
     let completed = 0;
+    let skipped = 0;
     let failed = 0;
-    const failedConversations = [];
+    const failedItems = [];
 
-    progressText.textContent = `Exporting ${total} conversations...`;
+    progressText.textContent = `Exporting ${total} ${noun}...`;
 
-    // Process conversations in batches to avoid overwhelming the API
+    // Process items in batches to avoid overwhelming the API
     const batchSize = 3; // Process 3 at a time
     for (let i = 0; i < total; i += batchSize) {
       if (cancelExport) break;
 
-      const batch = conversations.slice(i, Math.min(i + batchSize, total));
-      const promises = batch.map(async (conv) => {
+      const batch = items.slice(i, Math.min(i + batchSize, total));
+      await Promise.all(batch.map(async (item) => {
+        const label = item.name || item.title || item.uuid || item.id;
         try {
-          const response = await fetch(
-            `https://claude.ai/api/organizations/${orgId}/chat_conversations/${conv.uuid}?tree=True&rendering_mode=messages&render_all_tools=true`,
-            {
-              credentials: 'include',
-              headers: {
-                'Accept': 'application/json',
-              }
-            }
-          );
-          
-          if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
+          const file = await renderItem(item);
+          if (!file) {
+            skipped++;
+            return;
           }
-          
-          const data = await response.json();
-          
-          // Infer model if null
-          data.model = inferModel(data);
-          
-          // Generate filename and content based on format
-          let content, filename;
-          const safeName = conv.name.replace(/[<>:"/\\|?*]/g, '_'); // Remove invalid filename characters
-          
-          switch (format) {
-            case 'markdown':
-              content = convertToMarkdown(data, includeMetadata, { project, contributor, tags });
-              filename = buildFrontgraphFilename(data);
-              break;
-            case 'text':
-              content = convertToText(data, includeMetadata, { tags });
-              filename = `${safeName}.txt`;
-              break;
-            default: // json
-              content = JSON.stringify(withExportTags(data, tags), null, 2);
-              filename = `${safeName}.json`;
-          }
-          
-          // Add file to ZIP
-          zip.file(filename, content);
+          zip.file(folder + sanitizeFilename(file.filename), file.content);
           completed++;
-          
         } catch (error) {
-          console.error(`Failed to export ${conv.name}:`, error);
+          console.error(`Failed to export ${label}:`, error);
           failed++;
-          failedConversations.push(conv.name);
+          failedItems.push(label);
         }
-      });
-      
-      // Wait for batch to complete
-      await Promise.all(promises);
-      
+      }));
+
       // Update progress
-      const progress = Math.round((completed + failed) / total * 100);
+      const progress = Math.round((completed + skipped + failed) / total * 100);
       progressBar.style.width = `${progress}%`;
       progressStats.textContent = `${completed} succeeded, ${failed} failed out of ${total}`;
-      
+
       // Small delay between batches
       if (i + batchSize < total && !cancelExport) {
         await new Promise(resolve => setTimeout(resolve, 200));
       }
     }
-    
+
     if (cancelExport) {
       progressModal.style.display = 'none';
       showToast('Export cancelled', true);
       return;
     }
-    
+
     // Add a summary file
+    const opts = exportOptions();
     const summary = {
       export_date: new Date().toISOString(),
-      total_conversations: total,
+      [`total_${noun}`]: total,
       successful_exports: completed,
+      skipped_exports: skipped,
       failed_exports: failed,
-      failed_conversations: failedConversations,
-      format: format,
-      include_metadata: includeMetadata,
-      tags: normalizeTags(tags)
+      failed_items: failedItems,
+      format: opts.format,
+      include_metadata: opts.includeMetadata,
+      tags: normalizeTags(opts.tags)
     };
-    zip.file('export_summary.json', JSON.stringify(summary, null, 2));
-    
+    zip.file(`${folder}export_summary.json`, JSON.stringify(summary, null, 2));
+
     // Generate and download the ZIP file
     progressText.textContent = 'Creating ZIP file...';
     const blob = await zip.generateAsync({
@@ -627,25 +750,25 @@ async function exportConversationsBatch(conversations, buttonId, defaultLabel) {
       const zipProgress = Math.round(metadata.percent);
       progressBar.style.width = `${zipProgress}%`;
     });
-    
+
     // Download the ZIP file
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `claude-conversations-${new Date().toISOString().split('T')[0]}.zip`;
+    a.download = `claude-${noun}-${new Date().toISOString().split('T')[0]}.zip`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    
+
     progressModal.style.display = 'none';
-    
+
     if (failed > 0) {
-      showToast(`Exported ${completed} of ${total} conversations (${failed} failed). Check export_summary.json in the ZIP for details.`);
+      showToast(`Exported ${completed} of ${total} ${noun} (${failed} failed). Check export_summary.json in the ZIP for details.`);
     } else {
-      showToast(`Successfully exported all ${completed} conversations!`);
+      showToast(`Successfully exported ${completed} ${noun}!`);
     }
-    
+
   } catch (error) {
     console.error('Export error:', error);
     progressModal.style.display = 'none';
@@ -716,4 +839,7 @@ function setupEventListeners() {
 
   // Export selected button
   document.getElementById('exportSelectedBtn').addEventListener('click', exportSelected);
+
+  // Export all tasks button
+  document.getElementById('exportAllTasksBtn').addEventListener('click', exportAllTasks);
 }
