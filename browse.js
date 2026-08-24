@@ -4,7 +4,6 @@ let allTasks = [];
 let filteredInteractions = [];
 let orgId = null;
 let currentSort = 'updated_desc';
-let currentTypeFilter = ''; // '', 'chat', or 'cowork'
 
 // Selected interaction IDs (conversations use uuid, tasks use id)
 let selectedIds = new Set();
@@ -13,15 +12,16 @@ let selectedIds = new Set();
 let taskSchedules = new Map();
 let resolvingSchedules = false;
 
-// Bucket label for conversations not attached to any Claude.ai Project
+// Bucket label for interactions not attached to any Claude.ai Project
 const NO_PROJECT = 'No Project';
 
 // The bulk list endpoint returns project as a nested {uuid, name} object;
 // the single-conversation endpoint (used at export time) returns a flat
 // project_name string. Handle either shape so this keeps working if the
-// API changes which one shows up where.
-function getProjectName(conv) {
-  return conv.project_name || (conv.project && conv.project.name) || NO_PROJECT;
+// API changes which one shows up where. Cowork sessions are normalized to
+// the flat spelling, so they go through here too.
+function getProjectName(item) {
+  return item.project_name || (item.project && item.project.name) || NO_PROJECT;
 }
 
 // Model name mappings
@@ -150,10 +150,6 @@ async function loadConversations() {
     const models = [...new Set(allConversations.map(c => c.model))].filter(m => m).sort();
     populateModelFilter(models);
 
-    // Extract unique projects for filter (conversations with no project group under NO_PROJECT)
-    const projects = [...new Set(allConversations.map(getProjectName))].sort();
-    populateProjectFilter(projects);
-
     // Apply initial sort and display
     applyFiltersAndSort();
     
@@ -243,9 +239,40 @@ function formatModelName(model) {
   return MODEL_DISPLAY_NAMES[model] || model;
 }
 
-// Populate project filter dropdown
-function populateProjectFilter(projects) {
+// Projects the Project filter can usefully offer under the current Type and
+// "Only Scheduled Tasks" selection. A project with no interactions of the
+// selected type could only ever produce an empty list, so it isn't listed.
+function availableProjects(typeFilter, scheduledOnly) {
+  const names = new Set();
+
+  if (typeFilter !== 'cowork') {
+    allConversations.forEach(conv => names.add(getProjectName(conv)));
+  }
+
+  if (typeFilter !== 'chat') {
+    allTasks
+      .filter(task => !scheduledOnly || taskScheduledState(task) !== false)
+      .forEach(task => names.add(getProjectName(task)));
+  }
+
+  return [...names].sort();
+}
+
+// Rebuild the Project dropdown for the projects currently available. A chosen
+// project that has dropped out of that set is kept as a marked option rather
+// than silently reset, so the filter still reflects what the user picked and
+// the table can explain why it came back empty.
+function refreshProjectFilterOptions(typeFilter, scheduledOnly) {
   const projectFilter = document.getElementById('projectFilter');
+  const selected = projectFilter.value;
+  const projects = availableProjects(typeFilter, scheduledOnly);
+
+  // Filtering runs on every keystroke and after every background schedule
+  // check; rebuilding an unchanged dropdown would close it under the user.
+  const signature = [selected, ...projects].join('\n');
+  if (projectFilter.dataset.options === signature) return;
+  projectFilter.dataset.options = signature;
+
   projectFilter.innerHTML = '<option value="">All Projects</option>';
 
   projects.forEach(project => {
@@ -254,6 +281,15 @@ function populateProjectFilter(projects) {
     option.textContent = project;
     projectFilter.appendChild(option);
   });
+
+  if (selected && !projects.includes(selected)) {
+    const option = document.createElement('option');
+    option.value = selected;
+    option.textContent = `${selected} (no matches)`;
+    projectFilter.appendChild(option);
+  }
+
+  projectFilter.value = selected;
 }
 
 // Get model badge class
@@ -268,9 +304,13 @@ function getModelBadgeClass(model) {
 function applyFiltersAndSort() {
   const searchTerm = document.getElementById('searchInput').value.toLowerCase();
   const modelFilter = document.getElementById('modelFilter').value;
-  const projectFilter = document.getElementById('projectFilter').value;
   const typeFilter = document.getElementById('typeFilter').value;
   const scheduledOnlyChecked = document.getElementById('scheduledOnlyCheckbox').checked;
+
+  // Type narrows which projects exist, so the Project options are rebuilt
+  // before its value is read.
+  refreshProjectFilterOptions(typeFilter, scheduledOnlyChecked);
+  const projectFilter = document.getElementById('projectFilter').value;
 
   const filteredConversations = allConversations.filter(conv => {
     const matchesSearch = !searchTerm ||
@@ -288,10 +328,11 @@ function applyFiltersAndSort() {
     const matchesSearch = !searchTerm ||
       task.title.toLowerCase().includes(searchTerm);
 
+    const matchesProject = !projectFilter || getProjectName(task) === projectFilter;
     const matchesType = !typeFilter || typeFilter === 'cowork';
     const matchesScheduled = !scheduledOnlyChecked || taskScheduledState(task) !== false;
 
-    return matchesSearch && matchesType && matchesScheduled;
+    return matchesSearch && matchesProject && matchesType && matchesScheduled;
   });
 
   // Combine and sort
@@ -327,7 +368,7 @@ function combineAndSortInteractions(conversations, tasks) {
       created_at: task.created_at,
       updated_at: task.updated_at,
       model: null,
-      project: null,
+      project: task.project_name || null,
       status: task.status,
       _original: task
     }))
@@ -369,12 +410,40 @@ function combineAndSortInteractions(conversations, tasks) {
   return interactions;
 }
 
+// Spell out which filters produced an empty list. Combinations like a project
+// that holds chats but no Cowork sessions are legitimately empty, so the table
+// says which criteria to loosen rather than looking broken.
+function emptyResultsMessage() {
+  const typeFilter = document.getElementById('typeFilter').value;
+  const scheduledOnly = document.getElementById('scheduledOnlyCheckbox').checked;
+  const project = document.getElementById('projectFilter').value;
+  const model = document.getElementById('modelFilter').value;
+  const searchTerm = document.getElementById('searchInput').value.trim();
+
+  if (!allConversations.length && !allTasks.length) {
+    return 'No interactions found';
+  }
+
+  let subject = typeFilter === 'chat' ? 'chat conversations'
+    : typeFilter === 'cowork' ? 'Cowork sessions'
+    : 'interactions';
+  if (typeFilter === 'cowork' && scheduledOnly) subject = `scheduled ${subject}`;
+
+  const criteria = [];
+  if (project) criteria.push(`in the project “${project}”`);
+  if (model) criteria.push(`using ${formatModelName(model)}`);
+  if (searchTerm) criteria.push(`matching “${searchTerm}”`);
+
+  const detail = criteria.length ? ` ${criteria.join(', ')}` : '';
+  return escapeHtml(`No ${subject}${detail} are available. Try widening the filters above.`);
+}
+
 // Display interactions (conversations and tasks) in unified table
 function displayInteractions() {
   const tableContent = document.getElementById('tableContent');
 
   if (filteredInteractions.length === 0) {
-    tableContent.innerHTML = '<div class="no-results">No interactions found</div>';
+    tableContent.innerHTML = `<div class="no-results">${emptyResultsMessage()}</div>`;
     return;
   }
 
@@ -438,7 +507,6 @@ function displayInteractions() {
       `;
     } else {
       const state = taskScheduledState(interaction._original);
-      const scheduled = state === true ? 'Yes' : state === false ? 'No' : '—';
       const status = escapeHtml(interaction._original.status || 'Unknown');
 
       html += `
@@ -455,7 +523,7 @@ function displayInteractions() {
           <td class="date">${updatedDate}</td>
           <td class="date">${createdDate}</td>
           <td title="${state === null ? 'Not yet determined' : 'From the session\'s first event'}">${status}</td>
-          <td>—</td>
+          <td>${interaction.project ? escapeHtml(interaction.project) : '—'}</td>
           <td>
             <div class="actions">
               <button class="btn-small btn-export" data-id="${interaction.id}" data-name="${safeName}" data-type="cowork">

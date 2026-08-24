@@ -665,6 +665,7 @@ function normalizeCoworkList(payload) {
       created_at: row.created_at || row.started_at || '',
       updated_at: row.updated_at || row.last_active_at || row.created_at || '',
       status: row.status || '',
+      project_name: row.project_name || (row.project && row.project.name) || null,
       trigger_id: row.trigger_id || (row.trigger && row.trigger.id) || null
     }))
     .filter(row => row.id);
