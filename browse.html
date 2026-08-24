@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Browse Claude Conversations</title>
+  <title>Browse Claude Interactions</title>
   <style>
     * {
       box-sizing: border-box;
@@ -246,6 +246,25 @@
       background: #f3e5f5;
       color: #7b1fa2;
     }
+
+    .type-badge {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 500;
+      white-space: nowrap;
+    }
+
+    .type-badge.chat {
+      background: #e3f2fd;
+      color: #1565c0;
+    }
+
+    .type-badge.cowork {
+      background: #f3e5f5;
+      color: #7b1fa2;
+    }
     
     .actions {
       display: flex;
@@ -302,6 +321,21 @@
       text-align: center;
       padding: 40px;
       color: #666;
+    }
+
+    .info-box {
+      background: #f0f7ff;
+      border-left: 4px solid #1E376C;
+      padding: 12px 15px;
+      border-radius: 4px;
+      margin-top: 12px;
+      font-size: 13px;
+      color: #333;
+      line-height: 1.5;
+    }
+
+    .info-box p {
+      margin: 0;
     }
     
     .spinner {
@@ -380,13 +414,29 @@
 </head>
 <body>
   <div class="header">
-    <h1>Browse Claude Conversations</h1>
+    <h1>Browse Claude Interactions</h1>
     <div class="controls">
       <div class="search-box" id="searchBox">
-        <input type="text" id="searchInput" placeholder="Search conversations by name...">
+        <input type="text" id="searchInput" placeholder="Search interactions by name...">
         <button class="clear-btn" id="clearSearch">✕</button>
       </div>
       
+      <div class="filter-group">
+        <label>Type:</label>
+        <select id="typeFilter">
+          <option value="">All</option>
+          <option value="chat">Chat Conversations</option>
+          <option value="cowork">Cowork Sessions</option>
+        </select>
+      </div>
+
+      <div class="filter-group" id="scheduledOnlyGroup" style="display: none;">
+        <label>
+          <input type="checkbox" id="scheduledOnlyCheckbox">
+          Only Scheduled Tasks
+        </label>
+      </div>
+
       <div class="filter-group">
         <label>Model:</label>
         <select id="modelFilter">
@@ -456,38 +506,18 @@
 
       <span id="versionInfo" style="font-size: 11px; color: #999; margin-left: auto;"></span>
     </div>
+
+    <div class="info-box">
+      <p><strong>This list includes both chat conversations and Cowork sessions.</strong> Scheduled tasks are a specialized type of Cowork session. Use the Type filter above to show only the interactions you're interested in, or use the "Only Scheduled Tasks" checkbox when viewing Cowork sessions to see only scheduled runs.</p>
+    </div>
   </div>
-  
+
   <div class="container">
     <div class="conversations-table">
       <div id="tableContent">
         <div class="loading">
           <div class="spinner"></div>
-          <div>Loading conversations...</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Tasks run as Cowork sessions, a separate resource from chat
-         conversations, so they get their own table rather than extra columns
-         the conversation rows can't fill. -->
-    <h2 class="section-heading">
-      Cowork Sessions &amp; Tasks
-      <span class="section-stats" id="tasksStats">Loading...</span>
-      <label class="section-option">
-        <input type="checkbox" id="scheduledOnly">
-        Scheduled runs only
-      </label>
-      <button class="export-all-btn" id="exportAllTasksBtn" disabled>
-        Export All Tasks
-      </button>
-    </h2>
-
-    <div class="conversations-table">
-      <div id="tasksContent">
-        <div class="loading">
-          <div class="spinner"></div>
-          <div>Loading Cowork sessions...</div>
+          <div>Loading interactions...</div>
         </div>
       </div>
     </div>

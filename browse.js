@@ -1,16 +1,13 @@
 // State management
 let allConversations = [];
-let filteredConversations = [];
+let allTasks = [];
+let filteredInteractions = [];
 let orgId = null;
 let currentSort = 'updated_desc';
+let currentTypeFilter = ''; // '', 'chat', or 'cowork'
 
-// Selected conversation UUIDs, kept independent of what's currently
-// rendered/filtered so selections survive search/filter/sort changes.
+// Selected interaction IDs (conversations use uuid, tasks use id)
 let selectedIds = new Set();
-
-// Cowork sessions, listed separately from conversations because they are a
-// different resource with a different transcript format. See utils.js.
-let allTasks = [];
 
 // Session id to whether a schedule fired it, filled in as sessions are checked.
 let taskSchedules = new Map();
@@ -170,19 +167,13 @@ async function loadConversations() {
 // whether a session was fired by a schedule, and its real title, come from
 // replaying its event log at export time.
 async function loadTasks() {
-  const tasksContent = document.getElementById('tasksContent');
-
   try {
     allTasks = await fetchCoworkList();
     console.log(`Loaded ${allTasks.length} Cowork sessions`);
-
-    displayTasks();
-    document.getElementById('exportAllTasksBtn').disabled = allTasks.length === 0;
-
+    applyFiltersAndSort();
   } catch (error) {
     console.error('Error loading tasks:', error);
-    document.getElementById('tasksStats').textContent = 'unavailable';
-    tasksContent.innerHTML = `<div class="error">${escapeHtml(`Failed to load tasks: ${error.message}`)}</div>`;
+    showError(`Failed to load Cowork sessions: ${error.message}`);
   }
 }
 
@@ -196,19 +187,6 @@ function taskScheduledState(task) {
   return task.trigger_id ? true : null;
 }
 
-function scheduledOnlyChecked() {
-  return document.getElementById('scheduledOnly').checked;
-}
-
-// Sessions known not to be scheduled are hidden; undetermined ones stay visible
-// rather than being hidden on a guess.
-function visibleTasks() {
-  if (!scheduledOnlyChecked()) {
-    return allTasks;
-  }
-  return allTasks.filter(task => taskScheduledState(task) !== false);
-}
-
 // Reading one page of a session says whether a schedule fired it. Done on
 // demand rather than at load, since it costs a request per session. Results
 // accumulate, so toggling the filter again is free.
@@ -219,14 +197,12 @@ async function resolveTaskSchedules() {
   if (!pending.length) return;
 
   resolvingSchedules = true;
-  const stats = document.getElementById('tasksStats');
   const batchSize = 3;
   let checked = 0;
 
   try {
     for (let i = 0; i < pending.length; i += batchSize) {
       const batch = pending.slice(i, i + batchSize);
-      stats.textContent = `checking ${checked + 1}–${checked + batch.length} of ${pending.length}…`;
 
       await Promise.all(batch.map(async (task) => {
         try {
@@ -237,103 +213,16 @@ async function resolveTaskSchedules() {
       }));
 
       checked += batch.length;
-      displayTasks();
+      applyFiltersAndSort();
 
       if (checked < pending.length) {
-        stats.textContent = `checked ${checked} of ${pending.length}…`;
         await new Promise(resolve => setTimeout(resolve, 200));
       }
     }
   } finally {
     resolvingSchedules = false;
-    displayTasks();
+    applyFiltersAndSort();
   }
-}
-
-// Display Cowork sessions in their own table
-function displayTasks() {
-  const tasksContent = document.getElementById('tasksContent');
-  const shown = visibleTasks();
-  const stats = document.getElementById('tasksStats');
-
-  stats.textContent = shown.length === allTasks.length
-    ? `${allTasks.length} sessions`
-    : `${shown.length} of ${allTasks.length} sessions`;
-
-  if (allTasks.length === 0) {
-    tasksContent.innerHTML = '<div class="no-results">No Cowork sessions found</div>';
-    return;
-  }
-  if (shown.length === 0) {
-    tasksContent.innerHTML = '<div class="no-results">No scheduled runs among these sessions</div>';
-    return;
-  }
-
-  let html = `
-    <table>
-      <thead>
-        <tr>
-          <th>Session</th>
-          <th>Created</th>
-          <th>Last Active</th>
-          <th>Scheduled</th>
-          <th>Status</th>
-          <th>Actions</th>
-        </tr>
-      </thead>
-      <tbody>
-  `;
-
-  shown.forEach(task => {
-    const safeTitle = escapeHtml(task.title);
-    const state = taskScheduledState(task);
-    const scheduled = state === true ? 'Yes' : state === false ? 'No' : '—';
-
-    html += `
-      <tr data-id="${task.id}">
-        <td>
-          <div class="conversation-name">
-            <a href="https://claude.ai/cowork/${task.id}" target="_blank" title="${safeTitle}">
-              ${safeTitle}
-            </a>
-          </div>
-        </td>
-        <td class="date">${task.created_at ? new Date(task.created_at).toLocaleDateString() : '—'}</td>
-        <td class="date">${task.updated_at ? new Date(task.updated_at).toLocaleDateString() : '—'}</td>
-        <td title="${state === null ? 'Not yet determined' : 'From the session\'s first event'}">${scheduled}</td>
-        <td>${escapeHtml(task.status)}</td>
-        <td>
-          <div class="actions">
-            <button class="btn-small btn-export btn-export-task" data-id="${task.id}" data-name="${safeTitle}">
-              Export
-            </button>
-            <button class="btn-small btn-view btn-view-task" data-id="${task.id}">
-              View
-            </button>
-          </div>
-        </td>
-      </tr>
-    `;
-  });
-
-  html += `
-      </tbody>
-    </table>
-  `;
-
-  tasksContent.innerHTML = html;
-
-  document.querySelectorAll('.btn-export-task').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      exportTask(e.target.dataset.id, e.target.dataset.name);
-    });
-  });
-
-  document.querySelectorAll('.btn-view-task').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      window.open(`https://claude.ai/cowork/${e.target.dataset.id}`, '_blank');
-    });
-  });
 }
 
 // Populate model filter dropdown
@@ -380,34 +269,75 @@ function applyFiltersAndSort() {
   const searchTerm = document.getElementById('searchInput').value.toLowerCase();
   const modelFilter = document.getElementById('modelFilter').value;
   const projectFilter = document.getElementById('projectFilter').value;
+  const typeFilter = document.getElementById('typeFilter').value;
+  const scheduledOnlyChecked = document.getElementById('scheduledOnlyCheckbox').checked;
 
-  // Filter conversations
-  filteredConversations = allConversations.filter(conv => {
+  const filteredConversations = allConversations.filter(conv => {
     const matchesSearch = !searchTerm ||
       conv.name.toLowerCase().includes(searchTerm) ||
       (conv.summary && conv.summary.toLowerCase().includes(searchTerm));
 
     const matchesModel = !modelFilter || conv.model === modelFilter;
     const matchesProject = !projectFilter || getProjectName(conv) === projectFilter;
+    const matchesType = !typeFilter || typeFilter === 'chat';
 
-    return matchesSearch && matchesModel && matchesProject;
+    return matchesSearch && matchesModel && matchesProject && matchesType;
   });
-  
-  // Sort conversations
-  sortConversations();
-  
+
+  const filteredTasks = allTasks.filter(task => {
+    const matchesSearch = !searchTerm ||
+      task.title.toLowerCase().includes(searchTerm);
+
+    const matchesType = !typeFilter || typeFilter === 'cowork';
+    const matchesScheduled = !scheduledOnlyChecked || taskScheduledState(task) !== false;
+
+    return matchesSearch && matchesType && matchesScheduled;
+  });
+
+  // Combine and sort
+  filteredInteractions = combineAndSortInteractions(filteredConversations, filteredTasks);
+
   // Update display
-  displayConversations();
+  displayInteractions();
   updateStats();
 }
 
-// Sort conversations based on current sort setting
-function sortConversations() {
+// Combine conversations and tasks, then sort
+function combineAndSortInteractions(conversations, tasks) {
+  const interactions = [
+    ...conversations.map(conv => ({
+      type: 'chat',
+      uuid: conv.uuid,
+      id: conv.uuid,
+      name: conv.name,
+      title: conv.name,
+      created_at: conv.created_at,
+      updated_at: conv.updated_at,
+      model: conv.model,
+      project: getProjectName(conv),
+      summary: conv.summary,
+      _original: conv
+    })),
+    ...tasks.map(task => ({
+      type: 'cowork',
+      uuid: task.id,
+      id: task.id,
+      name: task.title,
+      title: task.title,
+      created_at: task.created_at,
+      updated_at: task.updated_at,
+      model: null,
+      project: null,
+      status: task.status,
+      _original: task
+    }))
+  ];
+
   const [field, direction] = currentSort.split('_');
-  
-  filteredConversations.sort((a, b) => {
+
+  interactions.sort((a, b) => {
     let aVal, bVal;
-    
+
     switch (field) {
       case 'name':
         aVal = a.name.toLowerCase();
@@ -422,39 +352,42 @@ function sortConversations() {
         bVal = new Date(b.updated_at);
         break;
       case 'project':
-        aVal = getProjectName(a).toLowerCase();
-        bVal = getProjectName(b).toLowerCase();
+        aVal = (a.project || '').toLowerCase();
+        bVal = (b.project || '').toLowerCase();
         break;
       default:
         return 0;
     }
-    
+
     if (direction === 'asc') {
       return aVal > bVal ? 1 : -1;
     } else {
       return aVal < bVal ? 1 : -1;
     }
   });
+
+  return interactions;
 }
 
-// Display conversations in table
-function displayConversations() {
+// Display interactions (conversations and tasks) in unified table
+function displayInteractions() {
   const tableContent = document.getElementById('tableContent');
-  
-  if (filteredConversations.length === 0) {
-    tableContent.innerHTML = '<div class="no-results">No conversations found</div>';
+
+  if (filteredInteractions.length === 0) {
+    tableContent.innerHTML = '<div class="no-results">No interactions found</div>';
     return;
   }
-  
+
   let html = `
     <table>
       <thead>
         <tr>
           <th><input type="checkbox" id="selectAllVisible"></th>
           <th class="sortable" data-sort="name">Name</th>
+          <th>Type</th>
           <th class="sortable" data-sort="updated">Last Updated</th>
           <th class="sortable" data-sort="created">Created</th>
-          <th>Model</th>
+          <th>Model / Status</th>
           <th class="sortable" data-sort="project">Project</th>
           <th>Actions</th>
         </tr>
@@ -462,44 +395,80 @@ function displayConversations() {
       <tbody>
   `;
 
-  filteredConversations.forEach(conv => {
-    const updatedDate = new Date(conv.updated_at).toLocaleDateString();
-    const createdDate = new Date(conv.created_at).toLocaleDateString();
-    const modelBadgeClass = getModelBadgeClass(conv.model);
-    const checked = selectedIds.has(conv.uuid) ? 'checked' : '';
-    const safeConvName = escapeHtml(conv.name);
-    const safeProjectName = escapeHtml(getProjectName(conv));
+  filteredInteractions.forEach(interaction => {
+    const updatedDate = new Date(interaction.updated_at).toLocaleDateString();
+    const createdDate = new Date(interaction.created_at).toLocaleDateString();
+    const checked = selectedIds.has(interaction.id) ? 'checked' : '';
+    const safeName = escapeHtml(interaction.name);
 
-    html += `
-      <tr data-id="${conv.uuid}">
-        <td><input type="checkbox" class="row-select" data-id="${conv.uuid}" ${checked}></td>
-        <td>
-          <div class="conversation-name">
-            <a href="https://claude.ai/chat/${conv.uuid}" target="_blank" title="${safeConvName}">
-              ${safeConvName}
-            </a>
-          </div>
-        </td>
-        <td class="date">${updatedDate}</td>
-        <td class="date">${createdDate}</td>
-        <td>
-          <span class="model-badge ${modelBadgeClass}">
-            ${formatModelName(conv.model)}
-          </span>
-        </td>
-        <td>${safeProjectName}</td>
-        <td>
-          <div class="actions">
-            <button class="btn-small btn-export" data-id="${conv.uuid}" data-name="${safeConvName}">
-              Export
-            </button>
-            <button class="btn-small btn-view" data-id="${conv.uuid}">
-              View
-            </button>
-          </div>
-        </td>
-      </tr>
-    `;
+    if (interaction.type === 'chat') {
+      const modelBadgeClass = getModelBadgeClass(interaction.model);
+      const safeProjectName = escapeHtml(interaction.project);
+
+      html += `
+        <tr data-id="${interaction.uuid}" data-type="chat">
+          <td><input type="checkbox" class="row-select" data-id="${interaction.id}" ${checked}></td>
+          <td>
+            <div class="conversation-name">
+              <a href="https://claude.ai/chat/${interaction.uuid}" target="_blank" title="${safeName}">
+                ${safeName}
+              </a>
+            </div>
+          </td>
+          <td><span class="type-badge chat">Chat</span></td>
+          <td class="date">${updatedDate}</td>
+          <td class="date">${createdDate}</td>
+          <td>
+            <span class="model-badge ${modelBadgeClass}">
+              ${formatModelName(interaction.model)}
+            </span>
+          </td>
+          <td>${safeProjectName}</td>
+          <td>
+            <div class="actions">
+              <button class="btn-small btn-export" data-id="${interaction.uuid}" data-name="${safeName}" data-type="chat">
+                Export
+              </button>
+              <button class="btn-small btn-view" data-id="${interaction.uuid}" data-type="chat">
+                View
+              </button>
+            </div>
+          </td>
+        </tr>
+      `;
+    } else {
+      const state = taskScheduledState(interaction._original);
+      const scheduled = state === true ? 'Yes' : state === false ? 'No' : '—';
+      const status = escapeHtml(interaction._original.status || 'Unknown');
+
+      html += `
+        <tr data-id="${interaction.id}" data-type="cowork">
+          <td><input type="checkbox" class="row-select" data-id="${interaction.id}" ${checked}></td>
+          <td>
+            <div class="conversation-name">
+              <a href="https://claude.ai/cowork/${interaction.id}" target="_blank" title="${safeName}">
+                ${safeName}
+              </a>
+            </div>
+          </td>
+          <td><span class="type-badge cowork">Cowork</span></td>
+          <td class="date">${updatedDate}</td>
+          <td class="date">${createdDate}</td>
+          <td title="${state === null ? 'Not yet determined' : 'From the session\'s first event'}">${status}</td>
+          <td>—</td>
+          <td>
+            <div class="actions">
+              <button class="btn-small btn-export" data-id="${interaction.id}" data-name="${safeName}" data-type="cowork">
+                Export
+              </button>
+              <button class="btn-small btn-view" data-id="${interaction.id}" data-type="cowork">
+                View
+              </button>
+            </div>
+          </td>
+        </tr>
+      `;
+    }
   });
 
   html += `
@@ -512,15 +481,27 @@ function displayConversations() {
   // Add export button listeners
   document.querySelectorAll('.btn-export').forEach(btn => {
     btn.addEventListener('click', (e) => {
-      exportConversation(e.target.dataset.id, e.target.dataset.name);
+      const type = e.target.dataset.type;
+      const id = e.target.dataset.id;
+      const name = e.target.dataset.name;
+      if (type === 'chat') {
+        exportConversation(id, name);
+      } else {
+        exportTask(id, name);
+      }
     });
   });
 
   // Add view button listeners
   document.querySelectorAll('.btn-view').forEach(btn => {
     btn.addEventListener('click', (e) => {
-      const conversationId = e.target.dataset.id;
-      window.open(`https://claude.ai/chat/${conversationId}`, '_blank');
+      const type = e.target.dataset.type;
+      const id = e.target.dataset.id;
+      if (type === 'chat') {
+        window.open(`https://claude.ai/chat/${id}`, '_blank');
+      } else {
+        window.open(`https://claude.ai/cowork/${id}`, '_blank');
+      }
     });
   });
 
@@ -536,11 +517,11 @@ function displayConversations() {
 
   // Select-all-visible checkbox
   document.getElementById('selectAllVisible').addEventListener('change', (e) => {
-    filteredConversations.forEach(conv => {
-      if (e.target.checked) selectedIds.add(conv.uuid);
-      else selectedIds.delete(conv.uuid);
+    filteredInteractions.forEach(interaction => {
+      if (e.target.checked) selectedIds.add(interaction.id);
+      else selectedIds.delete(interaction.id);
     });
-    displayConversations();
+    displayInteractions();
   });
 
   updateSelectionUI();
@@ -551,7 +532,7 @@ function displayConversations() {
 
 // Reflect current selection in the header checkbox, stats, and Export Selected button
 function updateSelectionUI() {
-  const visibleIds = filteredConversations.map(c => c.uuid);
+  const visibleIds = filteredInteractions.map(i => i.id);
   const visibleSelected = visibleIds.filter(id => selectedIds.has(id));
 
   const selectAllVisible = document.getElementById('selectAllVisible');
@@ -572,7 +553,8 @@ function updateSelectionUI() {
 // Update statistics
 function updateStats() {
   const stats = document.getElementById('stats');
-  let text = `Showing ${filteredConversations.length} of ${allConversations.length} conversations`;
+  const totalInteractions = allConversations.length + allTasks.length;
+  let text = `Showing ${filteredInteractions.length} of ${totalInteractions} interactions`;
   if (selectedIds.size > 0) text += ` — ${selectedIds.size} selected`;
   stats.textContent = text;
 }
@@ -657,50 +639,58 @@ async function exportTask(sessionId, sessionTitle) {
   }
 }
 
-// Export all conversations currently passing the search/model/project filters
+// Export all interactions currently passing the filters
 async function exportAllFiltered() {
+  const items = filteredInteractions.map(interaction => ({
+    type: interaction.type,
+    id: interaction.id,
+    uuid: interaction.uuid,
+    name: interaction.name,
+    _original: interaction._original
+  }));
+
   await exportBatch({
-    items: filteredConversations,
+    items,
     buttonId: 'exportAllBtn',
     defaultLabel: 'Export All',
-    noun: 'conversations',
-    renderItem: renderConversationFile
+    noun: 'interactions',
+    renderItem: renderInteractionFile
   });
 }
 
-// Export only the checked rows, regardless of what's currently filtered/visible
+// Export only the checked interactions, regardless of what's currently filtered/visible
 async function exportSelected() {
+  const items = filteredInteractions
+    .filter(i => selectedIds.has(i.id))
+    .map(interaction => ({
+      type: interaction.type,
+      id: interaction.id,
+      uuid: interaction.uuid,
+      name: interaction.name,
+      _original: interaction._original
+    }));
+
   await exportBatch({
-    items: allConversations.filter(c => selectedIds.has(c.uuid)),
+    items,
     buttonId: 'exportSelectedBtn',
     defaultLabel: 'Export Selected',
-    noun: 'conversations',
-    renderItem: renderConversationFile
+    noun: 'interactions',
+    renderItem: renderInteractionFile
   });
 }
 
-// Export every listed Cowork session, into their own folder in the ZIP so a
-// task and a conversation sharing a date and title can't collide.
-async function exportAllTasks() {
-  const scheduledOnly = scheduledOnlyChecked();
-
-  await exportBatch({
-    // Start from what the table shows, so sessions already known not to be
-    // scheduled aren't fetched only to be discarded.
-    items: visibleTasks(),
-    buttonId: 'exportAllTasksBtn',
-    defaultLabel: 'Export All Tasks',
-    noun: 'tasks',
-    folder: 'tasks/',
-    renderItem: async (row) => {
-      const session = await fetchCoworkSession(row.id);
-      // Whether a session was fired by a schedule is only knowable from its
-      // log, so this filter runs after the fetch rather than over the list.
-      if (scheduledOnly && !session.scheduled) return null;
-      const opts = exportOptions();
-      return renderTaskExport(session, opts.format, opts);
-    }
-  });
+// Render a single interaction (conversation or task) to a file
+async function renderInteractionFile(item) {
+  if (item.type === 'chat') {
+    return renderConversationFile({
+      uuid: item.uuid,
+      name: item.name
+    });
+  } else {
+    const session = await fetchCoworkSession(item.id);
+    const opts = exportOptions();
+    return renderTaskExport(session, opts.format, opts);
+  }
 }
 
 // One conversation row to one file, in whichever format the header selects.
@@ -897,41 +887,51 @@ function setupEventListeners() {
     }
     applyFiltersAndSort();
   });
-  
+
   // Clear search
   document.getElementById('clearSearch').addEventListener('click', () => {
     document.getElementById('searchInput').value = '';
     document.getElementById('searchBox').classList.remove('has-text');
     applyFiltersAndSort();
   });
-  
+
+  // Type filter
+  document.getElementById('typeFilter').addEventListener('change', (e) => {
+    currentTypeFilter = e.target.value;
+    const scheduledOnlyGroup = document.getElementById('scheduledOnlyGroup');
+    if (e.target.value === 'cowork') {
+      scheduledOnlyGroup.style.display = 'flex';
+    } else {
+      scheduledOnlyGroup.style.display = 'none';
+      document.getElementById('scheduledOnlyCheckbox').checked = false;
+    }
+    applyFiltersAndSort();
+  });
+
+  // Scheduled only checkbox. Turning it on has to check any sessions whose origin
+  // isn't known yet, which the list response doesn't tell us.
+  document.getElementById('scheduledOnlyCheckbox').addEventListener('change', async () => {
+    applyFiltersAndSort();
+    if (document.getElementById('scheduledOnlyCheckbox').checked) {
+      await resolveTaskSchedules();
+    }
+  });
+
   // Model filter
   document.getElementById('modelFilter').addEventListener('change', applyFiltersAndSort);
 
   // Project filter
   document.getElementById('projectFilter').addEventListener('change', applyFiltersAndSort);
-  
+
   // Sort dropdown
   document.getElementById('sortBy').addEventListener('change', (e) => {
     currentSort = e.target.value;
     applyFiltersAndSort();
   });
-  
+
   // Export all button
   document.getElementById('exportAllBtn').addEventListener('click', exportAllFiltered);
 
   // Export selected button
   document.getElementById('exportSelectedBtn').addEventListener('click', exportSelected);
-
-  // Export all tasks button
-  document.getElementById('exportAllTasksBtn').addEventListener('click', exportAllTasks);
-
-  // Scheduled-only filter. Turning it on has to check any sessions whose origin
-  // isn't known yet, which the list response doesn't tell us.
-  document.getElementById('scheduledOnly').addEventListener('change', async () => {
-    displayTasks();
-    if (scheduledOnlyChecked()) {
-      await resolveTaskSchedules();
-    }
-  });
 }
