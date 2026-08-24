@@ -378,39 +378,60 @@ function combineAndSortInteractions(conversations, tasks) {
   ];
 
   const [field, direction] = currentSort.split('_');
-
-  interactions.sort((a, b) => {
-    let aVal, bVal;
-
-    switch (field) {
-      case 'name':
-        aVal = a.name.toLowerCase();
-        bVal = b.name.toLowerCase();
-        break;
-      case 'created':
-        aVal = new Date(a.created_at);
-        bVal = new Date(b.created_at);
-        break;
-      case 'updated':
-        aVal = new Date(a.updated_at);
-        bVal = new Date(b.updated_at);
-        break;
-      case 'project':
-        aVal = (a.project || '').toLowerCase();
-        bVal = (b.project || '').toLowerCase();
-        break;
-      default:
-        return 0;
-    }
-
-    if (direction === 'asc') {
-      return aVal > bVal ? 1 : -1;
-    } else {
-      return aVal < bVal ? 1 : -1;
-    }
-  });
+  interactions.sort((a, b) => compareInteractions(a, b, field, direction));
 
   return interactions;
+}
+
+// A row with nothing to compare on — a Cowork session the list endpoint gave
+// no dates or project for — goes last whichever way the sort runs, rather than
+// riding the top on comparisons that fail in both directions.
+function compareMissing(aMissing, bMissing) {
+  if (aMissing && bMissing) return 0;
+  return aMissing ? 1 : -1;
+}
+
+// Order two interactions by the field and direction the Sort by dropdown (or a
+// column header) selected. Returns 0 for ties, leaving equal rows in the order
+// they were combined so repeated renders don't reshuffle them.
+function compareInteractions(a, b, field, direction) {
+  const sign = direction === 'asc' ? 1 : -1;
+
+  switch (field) {
+    case 'created':
+    case 'updated': {
+      const aTime = new Date(a[`${field}_at`]).getTime();
+      const bTime = new Date(b[`${field}_at`]).getTime();
+      if (Number.isNaN(aTime) || Number.isNaN(bTime)) {
+        return compareMissing(Number.isNaN(aTime), Number.isNaN(bTime));
+      }
+      return sign * Math.sign(aTime - bTime);
+    }
+    case 'name':
+    case 'project': {
+      const aText = (field === 'name' ? a.name : a.project) || '';
+      const bText = (field === 'name' ? b.name : b.project) || '';
+      if (!aText || !bText) return compareMissing(!aText, !bText);
+      return sign * aText.localeCompare(bText, undefined, { sensitivity: 'base' });
+    }
+    default:
+      return 0;
+  }
+}
+
+// Sort on a clicked column header: a new column starts newest-first for dates
+// and A-Z for text, and clicking the column already sorted on flips it. The
+// Sort by dropdown is kept in step, since both drive the same state.
+function sortByColumn(field) {
+  const [currentField, currentDirection] = currentSort.split('_');
+
+  const direction = field === currentField
+    ? (currentDirection === 'asc' ? 'desc' : 'asc')
+    : (field === 'name' || field === 'project' ? 'asc' : 'desc');
+
+  currentSort = `${field}_${direction}`;
+  document.getElementById('sortBy').value = currentSort;
+  applyFiltersAndSort();
 }
 
 // Spell out which filters produced an empty list. Combinations like a project
@@ -456,17 +477,22 @@ function displayInteractions() {
     return;
   }
 
+  // Mark the column currently sorted on, which the header arrow styling reads.
+  const [sortField, sortDirection] = currentSort.split('_');
+  const sortableTh = (field, label) =>
+    `<th class="sortable${field === sortField ? ` sorted-${sortDirection}` : ''}" data-sort="${field}">${label}</th>`;
+
   let html = `
     <table>
       <thead>
         <tr>
           <th><input type="checkbox" id="selectAllVisible"></th>
-          <th class="sortable" data-sort="name">Name</th>
+          ${sortableTh('name', 'Name')}
           <th>Type</th>
-          <th class="sortable" data-sort="updated">Last Updated</th>
-          <th class="sortable" data-sort="created">Created</th>
+          ${sortableTh('updated', 'Last Updated')}
+          ${sortableTh('created', 'Created')}
           <th>Model / Status</th>
-          <th class="sortable" data-sort="project">Project</th>
+          ${sortableTh('project', 'Project')}
           <th>Actions</th>
         </tr>
       </thead>
@@ -554,6 +580,11 @@ function displayInteractions() {
   `;
 
   tableContent.innerHTML = html;
+
+  // Column header sorting
+  document.querySelectorAll('th.sortable').forEach(th => {
+    th.addEventListener('click', () => sortByColumn(th.dataset.sort));
+  });
 
   // Add export button listeners
   document.querySelectorAll('.btn-export').forEach(btn => {
