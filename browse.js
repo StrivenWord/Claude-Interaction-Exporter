@@ -146,10 +146,6 @@ async function loadConversations() {
       model: inferModel(conv)
     }));
     
-    // Extract unique models for filter
-    const models = [...new Set(allConversations.map(c => c.model))].filter(m => m).sort();
-    populateModelFilter(models);
-
     // Apply initial sort and display
     applyFiltersAndSort();
     
@@ -221,19 +217,6 @@ async function resolveTaskSchedules() {
   }
 }
 
-// Populate model filter dropdown
-function populateModelFilter(models) {
-  const modelFilter = document.getElementById('modelFilter');
-  modelFilter.innerHTML = '<option value="">All Models</option>';
-  
-  models.forEach(model => {
-    const option = document.createElement('option');
-    option.value = model;
-    option.textContent = formatModelName(model);
-    modelFilter.appendChild(option);
-  });
-}
-
 // Format model name for display
 function formatModelName(model) {
   return MODEL_DISPLAY_NAMES[model] || model;
@@ -258,38 +241,44 @@ function availableProjects(typeFilter, scheduledOnly) {
   return [...names].sort();
 }
 
-// Rebuild the Project dropdown for the projects currently available. A chosen
-// project that has dropped out of that set is kept as a marked option rather
-// than silently reset, so the filter still reflects what the user picked and
-// the table can explain why it came back empty.
-function refreshProjectFilterOptions(typeFilter, scheduledOnly) {
-  const projectFilter = document.getElementById('projectFilter');
-  const selected = projectFilter.value;
-  const projects = availableProjects(typeFilter, scheduledOnly);
+// Models the Model filter can usefully offer under the current Type selection.
+// Cowork sessions carry no model, so viewing them alone leaves nothing to
+// choose between.
+function availableModels(typeFilter) {
+  if (typeFilter === 'cowork') return [];
+  return [...new Set(allConversations.map(conv => conv.model))].filter(m => m).sort();
+}
+
+// Rebuild a filter dropdown for the values currently available. A chosen value
+// that has dropped out of that set is kept as a marked option rather than
+// silently reset, so the filter still reflects what the user picked and the
+// table can explain why it came back empty.
+function refreshFilterOptions(select, allLabel, values, labelFor) {
+  const selected = select.value;
 
   // Filtering runs on every keystroke and after every background schedule
   // check; rebuilding an unchanged dropdown would close it under the user.
-  const signature = [selected, ...projects].join('\n');
-  if (projectFilter.dataset.options === signature) return;
-  projectFilter.dataset.options = signature;
+  const signature = [selected, ...values].join('\n');
+  if (select.dataset.options === signature) return;
+  select.dataset.options = signature;
 
-  projectFilter.innerHTML = '<option value="">All Projects</option>';
+  select.innerHTML = `<option value="">${allLabel}</option>`;
 
-  projects.forEach(project => {
+  values.forEach(value => {
     const option = document.createElement('option');
-    option.value = project;
-    option.textContent = project;
-    projectFilter.appendChild(option);
+    option.value = value;
+    option.textContent = labelFor(value);
+    select.appendChild(option);
   });
 
-  if (selected && !projects.includes(selected)) {
+  if (selected && !values.includes(selected)) {
     const option = document.createElement('option');
     option.value = selected;
-    option.textContent = `${selected} (no matches)`;
-    projectFilter.appendChild(option);
+    option.textContent = `${labelFor(selected)} (no matches)`;
+    select.appendChild(option);
   }
 
-  projectFilter.value = selected;
+  select.value = selected;
 }
 
 // Get model badge class
@@ -303,14 +292,26 @@ function getModelBadgeClass(model) {
 // Apply filters and sorting
 function applyFiltersAndSort() {
   const searchTerm = document.getElementById('searchInput').value.toLowerCase();
-  const modelFilter = document.getElementById('modelFilter').value;
   const typeFilter = document.getElementById('typeFilter').value;
   const scheduledOnlyChecked = document.getElementById('scheduledOnlyCheckbox').checked;
 
-  // Type narrows which projects exist, so the Project options are rebuilt
-  // before its value is read.
-  refreshProjectFilterOptions(typeFilter, scheduledOnlyChecked);
+  // Type narrows which projects and models exist, so both dropdowns are
+  // rebuilt before their values are read.
+  refreshFilterOptions(
+    document.getElementById('projectFilter'),
+    'All Projects',
+    availableProjects(typeFilter, scheduledOnlyChecked),
+    name => name
+  );
+  refreshFilterOptions(
+    document.getElementById('modelFilter'),
+    'All Models',
+    availableModels(typeFilter),
+    formatModelName
+  );
+
   const projectFilter = document.getElementById('projectFilter').value;
+  const modelFilter = document.getElementById('modelFilter').value;
 
   const filteredConversations = allConversations.filter(conv => {
     const matchesSearch = !searchTerm ||
@@ -329,10 +330,12 @@ function applyFiltersAndSort() {
       task.title.toLowerCase().includes(searchTerm);
 
     const matchesProject = !projectFilter || getProjectName(task) === projectFilter;
+    // Sessions carry no model, so any model choice rules them out.
+    const matchesModel = !modelFilter;
     const matchesType = !typeFilter || typeFilter === 'cowork';
     const matchesScheduled = !scheduledOnlyChecked || taskScheduledState(task) !== false;
 
-    return matchesSearch && matchesProject && matchesType && matchesScheduled;
+    return matchesSearch && matchesProject && matchesModel && matchesType && matchesScheduled;
   });
 
   // Combine and sort
@@ -424,8 +427,14 @@ function emptyResultsMessage() {
     return 'No interactions found';
   }
 
-  let subject = typeFilter === 'chat' ? 'chat conversations'
-    : typeFilter === 'cowork' ? 'Cowork sessions'
+  // Only chats have a model, so asking for a model while viewing sessions can
+  // never match — say so rather than listing it as one criterion among several.
+  if (model && typeFilter === 'cowork') {
+    return escapeHtml(`Cowork sessions aren't associated with a model, so none can match ${formatModelName(model)}. Clear the Model filter above to see them.`);
+  }
+
+  let subject = typeFilter === 'cowork' ? 'Cowork sessions'
+    : typeFilter === 'chat' || model ? 'chat conversations'
     : 'interactions';
   if (typeFilter === 'cowork' && scheduledOnly) subject = `scheduled ${subject}`;
 
@@ -434,7 +443,7 @@ function emptyResultsMessage() {
   if (model) criteria.push(`using ${formatModelName(model)}`);
   if (searchTerm) criteria.push(`matching “${searchTerm}”`);
 
-  const detail = criteria.length ? ` ${criteria.join(', ')}` : '';
+  const detail = criteria.length ? ` ${criteria.join(' ')}` : '';
   return escapeHtml(`No ${subject}${detail} are available. Try widening the filters above.`);
 }
 
