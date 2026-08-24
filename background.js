@@ -1,6 +1,6 @@
 // Handle extension installation
 chrome.runtime.onInstalled.addListener(() => {
-  console.log('Claude Conversation Exporter installed');
+  console.log('Claude Interaction Exporter installed');
 });
 
 // Inject content script into already-open Claude.ai tabs when extension is installed/updated

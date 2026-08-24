@@ -47,4 +47,4 @@ Any material change to this policy will be published here with an updated date.
 ## Contact
 
 Questions about this policy: open an issue at
-<https://github.com/stevesunypoly/Claude-Conversation-Exporter/issues>.
+<https://github.com/StrivenWord/Claude-Interaction-Exporter/issues>.

@@ -4,7 +4,7 @@
     bottom: 20px;
     right: 20px;
     z-index: 9999;
-    background: #1E9E64;
+    background: #1E376C;
     color: white;
     border: none;
     border-radius: 50%;
@@ -15,8 +15,8 @@
     box-shadow: 0 4px 12px rgba(0,0,0,0.15);
     transition: all 0.3s;
   }
-  
+
   .claude-exporter-button:hover {
-    background: #167A4D;
+    background: #152750;
     transform: scale(1.1);
   }

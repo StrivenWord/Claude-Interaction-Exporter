@@ -223,7 +223,7 @@ Forked from [socketteer/Claude-Conversation-Exporter](https://github.com/sockett
 3. **Checkbox selection with an Export Selected button.** Selection is tracked independently of the filters, so checking some rows, changing the search, and checking more does not lose the earlier picks.
 4. **Cowork session and scheduled task export.** The popup recognizes `claude.ai/cowork/<id>`, replaying the session's event log into a readable transcript that includes tool activity — which searches ran, what they returned, what files were written — since that is the provenance of a task's result. The browse page lists sessions alongside conversations, and batch export can be limited to scheduled runs.
 
-Two upstream defects are also fixed: [issue #12](https://github.com/socketteer/Claude-Conversation-Exporter/issues/12), a DOM XSS in the browse page where conversation titles were inserted into `innerHTML` unescaped, so a title like `<img src=x onerror=...>` would execute; and an overly broad `web_accessible_resources` match (`<all_urls>`, narrowed to `https://claude.ai/*`). The accent color is green rather than upstream's purple, so it is obvious at a glance which build is loaded.
+Two upstream defects are also fixed: [issue #12](https://github.com/socketteer/Claude-Conversation-Exporter/issues/12), a DOM XSS in the browse page where conversation titles were inserted into `innerHTML` unescaped, so a title like `<img src=x onerror=...>` would execute; and an overly broad `web_accessible_resources` match (`<all_urls>`, narrowed to `https://claude.ai/*`). The accent color is blue rather than upstream's purple, so it is obvious at a glance which build is loaded.
 
 ## Provenance
 
@@ -234,3 +234,7 @@ Upstream's original code was written by Claude Opus 4.1 in collaboration with a 
 ## License
 
 Upstream (`socketteer/Claude-Conversation-Exporter`) carries no license — no `LICENSE` file, and its README's License section is an unfilled placeholder. There is accordingly no license to inherit, and this fork is shared publicly as-is under the same unlicensed status, not under any explicit grant.
+
+---
+
+**Current fork:** https://github.com/StrivenWord/Claude-Interaction-Exporter
