@@ -3,12 +3,13 @@ description: A browser extension for exporting Claude conversations
 baseurl: ""
 url: "https://strivenword.github.io/Claude-Interaction-Exporter"
 
-theme: minima
+remote_theme: mmistakes/minimal-mistakes-jekyll
 
 plugins:
   - jekyll-feed
   - jekyll-seo-tag
   - jekyll-sitemap
+  - jekyll-include-cache
 
 exclude:
   - .git
