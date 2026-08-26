@@ -7,10 +7,12 @@ task :build do
   puts "Site built in _site/"
 end
 
+# Serve at the root locally; the production baseurl in _config.yml is a
+# GitHub Pages project path and would otherwise 404 on localhost:4000.
 desc "Run local development server on localhost:4000"
 task :serve do
   puts "Starting Jekyll development server on http://localhost:4000"
-  sh "bundle exec jekyll serve --watch"
+  sh %(bundle exec jekyll serve --watch --livereload --baseurl "")
 end
 
 desc "Clean build artifacts"
