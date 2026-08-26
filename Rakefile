@@ -10,7 +10,7 @@ end
 desc "Run local development server on localhost:4000"
 task :serve do
   puts "Starting Jekyll development server on http://localhost:4000"
-  sh "bundle exec jekyll serve --watch --livereload"
+  sh "bundle exec jekyll serve --watch"
 end
 
 desc "Clean build artifacts"
