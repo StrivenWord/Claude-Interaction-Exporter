@@ -1,0 +1,19 @@
+title: Claude Conversation Exporter
+description: A browser extension for exporting Claude conversations
+baseurl: ""
+url: "https://strivenword.github.io/Claude-Interaction-Exporter"
+
+theme: minima
+
+plugins:
+  - jekyll-feed
+  - jekyll-seo-tag
+  - jekyll-sitemap
+
+exclude:
+  - .git
+  - .gitignore
+  - Gemfile
+  - Gemfile.lock
+  - README.md
+  - vendor/
