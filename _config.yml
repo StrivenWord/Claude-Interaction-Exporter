@@ -1,6 +1,6 @@
 title: Claude Interaction Exporter
 name: Claude Interaction Exporter
-description: A browser extension for exporting Claude conversations
+description: A browser extension for exporting your Claude.ai conversations, Cowork sessions, and scheduled tasks
 url: "https://strivenword.github.io"
 baseurl: "/Claude-Interaction-Exporter"
 repository: "StrivenWord/Claude-Interaction-Exporter"

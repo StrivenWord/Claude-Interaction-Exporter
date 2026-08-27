@@ -24,7 +24,7 @@ feature_row:
     btn_class: "btn--primary"
   - title: "Frontgraph-Ready Frontmatter"
     excerpt: "Markdown exports carry structured YAML frontmatter, so files land in Obsidian or any note system already organized."
-    url: /features/
+    url: /usage/#frontmatter
     btn_label: "Learn More"
     btn_class: "btn--primary"
 ---
@@ -39,10 +39,21 @@ Claude Interaction Exporter is a Chromium browser extension that saves your own 
 
 Claude.ai's own export tools are limited, and conversations you want to keep — research threads, coursework, project notes — tend to live only in the browser tab you had them in. This extension exists to get that content out in a form built for archiving: readable Markdown with structured frontmatter, plain text for quick pasting, or complete JSON for scripts and analysis.
 
+It also records something Claude.ai's own export leaves out: **which model each conversation used.**
+
 ## Getting started
 
-New to the extension? Start with [Installation](/installation/) to load it in your browser, then [Usage](/usage/) to walk through your first export.
+The extension is not in the Chrome Web Store yet, so you install it by loading its folder into your browser — about five minutes' work, and no build tools required.
+
+1. **[Installation]({{ '/installation/' | relative_url }})** — clone the repository or download the ZIP, load the folder unpacked, and enter your organization ID once.
+2. **[Usage]({{ '/usage/' | relative_url }})** — run your first export, then move on to browsing and bulk exports.
+
+Already installed and wondering what else it does? See [Features]({{ '/features/' | relative_url }}).
 
 ## Status
 
-This site is under active construction. The extension itself is further along — see the [Change Log](/changelog/) for what's shipped so far.
+The extension is in public beta and in active use. See the [Change Log]({{ '/changelog/' | relative_url }}) for what has shipped.
+
+## Not affiliated with Anthropic
+
+This is a community tool, forked from [socketteer/Claude-Conversation-Exporter](https://github.com/socketteer/Claude-Conversation-Exporter). It is not built, endorsed, or supported by Anthropic, and "Claude" is Anthropic's trademark. It exports only your own data, using the account you are already signed in to.
