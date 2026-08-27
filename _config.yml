@@ -24,7 +24,7 @@ author:
       url: "https://github.com/StrivenWord/Claude-Interaction-Exporter"
 
 footer:
-  ai_notice: "Text content on this site was authored using AI with human direction."
+  ai_notice: "Text content on this site was authored using AI, with human direction and editorial review."
   links:
     - label: "GitHub"
       icon: "fab fa-fw fa-github"
