@@ -1,0 +1,7 @@
+<!-- start custom footer snippets -->
+{% if site.footer.ai_notice %}
+  <p class="page__footer-ai-notice">
+    <i class="fas fa-fw fa-robot" aria-hidden="true"></i> {{ site.footer.ai_notice | escape_once | strip }}
+  </p>
+{% endif %}
+<!-- end custom footer snippets -->

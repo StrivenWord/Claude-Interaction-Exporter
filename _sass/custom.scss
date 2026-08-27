@@ -1,0 +1,40 @@
+/* ==========================================================================
+   CUSTOM OVERRIDES
+   ========================================================================== */
+
+/* Lay the footer out as rows so the AI-authorship notice can sit opposite the
+   copyright line on wide screens and stack beneath it on narrow ones. */
+.page__footer footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 1.5em;
+
+  &::after {
+    display: none; /* clearfix is redundant in a flex container */
+  }
+
+  .page__footer-follow {
+    flex: 1 1 100%;
+    order: 1;
+  }
+
+  .page__footer-copyright {
+    flex: 1 1 auto;
+    order: 2;
+  }
+}
+
+.page__footer-ai-notice {
+  flex: 1 1 100%;
+  order: 3;
+  margin: 0;
+  font-family: $global-font-family;
+  font-size: $type-size-7;
+  text-align: start;
+
+  @include breakpoint($medium) {
+    flex: 0 1 auto;
+    text-align: end;
+  }
+}
