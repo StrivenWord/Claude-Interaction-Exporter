@@ -13,3 +13,7 @@ main:
     url: /changelog/
   - title: "GitHub"
     url: "https://github.com/StrivenWord/Claude-Interaction-Exporter"
+  - title: "AI Use"
+    url: /ai/
+  - title: "Contact"
+    url: /contact/
