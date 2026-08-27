@@ -1,0 +1,366 @@
+commit 6953ff808c624e2c7b4752180dbbb6b250d312dd
+Author: Paul Lee <paul@strivenword.com>
+Date:   Sat Aug 22 18:36:09 2026 -0400
+
+    Add .gitignore for .DS_Store and docs/ directory
+    
+    Ignore macOS system files and the docs directory to prevent tracking
+    build artifacts and platform-specific files.
+    
+    Co-Authored-By: Claude Haiku 4.5 <noreply@anthropic.com>
+
+commit 37c780a1a8d5821051cca13752fa2387e5239b2e
+Author: Paul Lee <paul@strivenword.com>
+Date:   Sat Aug 22 17:11:47 2026 -0400
+
+    Rewrite the README and move the privacy policy into its own file
+    
+    The README now follows the usual shape for one: what it is, features,
+    install, use, output, permissions, limitations, troubleshooting, then the
+    development and fork notes. Install instructions cover loading it unpacked,
+    which is the only path that applies right now.
+    
+    Permissions get a short table saying what each one is used for, without
+    editorializing about how the browser words its install warning.
+    
+    The privacy policy moves to PRIVACY.md, linked from the README. A policy
+    is its own document with its own date, and it reads better away from the
+    usage instructions. Filled in the date, and pointed the contact line at
+    the repository's issues rather than leaving a placeholder.
+    
+    Checked every claim against the code, and corrected several that were
+    wrong:
+    
+    - There is no sort by model on the browse page; model is a filter only.
+    - Bulk export from the browse page fetches three conversations at a time
+      with a pause between batches, not one at a time.
+    - The popup's Export All in JSON writes the conversation list, so that
+      file has titles and dates but no messages.
+    - The version string sits at the top right of the browse page, not the
+      bottom.
+    - The button on the options page reads "Save Settings".
+    
+    And documented some behavior that was missing:
+    
+    - Editing the project or contributor field on the browse page saves it as
+      the new default; editing tags there does not.
+    - Turning off "include metadata" also drops tool activity from Cowork
+      exports.
+    - Tags are lowercased.
+    - The task table has its own Export All Tasks button, and those files land
+      in a tasks folder inside the ZIP.
+    - Plain text Cowork exports carry the conversation only, no tool activity.
+    
+    Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+
+commit f528e6aa7450f48747aa9d730e6282749b0012fd
+Author: Paul Lee <paul@strivenword.com>
+Date:   Fri Aug 21 20:27:19 2026 -0400
+
+    Make the scheduled-runs filter actually filter the task table
+    
+    The checkbox only ever affected the bulk export, so on the browse page it
+    looked inert. It now filters the table too, and there is a Scheduled column
+    showing what is known about each session.
+    
+    The reason it wasn't already doing this: the session list doesn't say
+    whether a schedule fired a run. That fact lives on the session's first
+    event, so it has to be read per session. Rather than replay whole logs,
+    this reads a single page — the first event is always on it — and remembers
+    the answer, so toggling the filter afterwards costs nothing.
+    
+    Checking the box therefore does visible work the first time: sessions are
+    checked a few at a time with progress in the section header, and rows drop
+    out as answers arrive. Sessions whose origin isn't known yet stay visible
+    rather than being hidden on a guess, and show a dash in the new column.
+    
+    The box now starts unchecked. Checked-by-default meant a fresh page had
+    nothing resolved and nothing filtered, which is precisely why it read as
+    doing nothing.
+    
+    Bulk export starts from what the table shows, so sessions already known not
+    to be scheduled are no longer fetched just to be thrown away. The check
+    after fetching stays, since it is the authoritative one and still covers
+    sessions that were never resolved.
+    
+    Also logs one raw row of the list response. Its field names are undocumented
+    and normalizeCoworkList is guessing at several of them, so a wrong guess
+    should be visible rather than showing up as a blank column.
+    
+    Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+
+commit c062dff6ceb1dda71fe35b5fabb5163dcb275a90
+Author: Paul Lee <paul@strivenword.com>
+Date:   Fri Aug 21 20:05:11 2026 -0400
+
+    Add export for scheduled tasks and other Cowork sessions
+    
+    Tasks run as Cowork sessions rather than chat conversations, so the
+    exporter couldn't see them at all. They live behind a different endpoint
+    and arrive as a flat event log instead of a message tree, which needed its
+    own read and render path.
+    
+    Reading one session took some care:
+    
+    - The log is paged. A request returns roughly 160KB and stops, which for a
+      task that ran tools is well short of the whole log, so the reader replays
+      forward until a page adds nothing new.
+    - The stream has no end. It replays the backlog and then stays open waiting
+      for live events, so waiting for the body to finish never returns. It is
+      now read incrementally and left once no event has arrived for a moment.
+      Keepalive frames deliberately don't count as activity, or an idle stream
+      would hold the read open forever.
+    - Listing sessions refuses the request without an API version header. The
+      endpoint says so in its response, which is now shown rather than reduced
+      to a bare status code.
+    
+    Exported tasks keep the same shape as exported conversations, with
+    frontmatter recording the routine that fired the run, its trigger, the
+    model, and whether it was scheduled or started by hand. Tool activity —
+    searches run, files written — is included when Metadata is checked, since
+    for a research task that is the provenance, and a file the task wrote is
+    often the real output.
+    
+    Three pieces of existing duplication got in the way and are now gone:
+    
+    - The default model timeline existed in two copies that had drifted apart.
+      One of them carried a February 29th, which doesn't exist in 2025 and had
+      been quietly rolling over to March 1st. Defined once now, with the dates
+      the models actually shipped on.
+    - The bulk export flow was 165 lines that tasks would have had to copy. It
+      now takes a per-item renderer, so conversations and tasks share the
+      progress display, the zip, the cancel button and the summary file.
+    - The export settings were being read from the page in three places.
+    
+    Conversation exports are unchanged, verified byte for byte against the
+    previous implementations across a set of fixtures.
+    
+    Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+
+commit 98d80df28ce9a0c599b8aef7e93a9cef94b9d787
+Author: Paul Lee <paul@strivenword.com>
+Date:   Fri Aug 21 09:01:40 2026 -0400
+
+    Drop external tooling and personal references from comments
+    
+    The frontmatter comments described the schema as mirroring a specific
+    authoring skill and named a personal filing convention. Neither is
+    discoverable from this repository, so both are replaced with plain
+    descriptions of what the code does.
+    
+    Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+
+commit ba0a3823a91a0f1cca9fd4d9fa6043ce62dea11b
+Author: Paul Lee <paul@strivenword.com>
+Date:   Fri Aug 21 08:53:11 2026 -0400
+
+    Stop re-injection from leaving stale content script code live
+    
+    The manifest declares utils.js and content.js as content scripts, and
+    background.js injects the same two files again for tabs that were already
+    open. Both files declared top-level constants, and a duplicate top-level
+    const is a parse-time error — so the second injection aborted the whole
+    file and the earlier copy kept handling messages.
+    
+    After reloading the extension in developer mode this left a tab running new
+    utils.js next to old content.js: the frontmatter emitted the new "tags: []"
+    placeholder while the old message handler was still dropping the tags the
+    popup sent, so a filled-in tags field produced an empty list no matter what
+    was typed. The same hazard silently reverted any other content.js edit.
+    
+    Both files now avoid top-level const/let, and the message listener registers
+    once per page, dispatching through the function binding so a re-injection's
+    fresh code is what actually runs.
+    
+    Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+
+commit 0a770df73fde7b4a46372cf47543d38e1b975da8
+Author: Paul Lee <paul@strivenword.com>
+Date:   Fri Aug 21 08:37:48 2026 -0400
+
+    Make per-export tags actually reach the exported files
+    
+    The tags field was wired into the popup but the content script never read
+    it, so every export from the toolbar button wrote an empty tags value. Pass
+    it through, and give tags a real shape everywhere they land:
+    
+    - Markdown frontmatter emits a YAML block sequence, the format Obsidian
+      writes itself, instead of interpolating the raw string. The old version
+      produced a single string rather than a list, and a "#"-prefixed entry
+      turned into a YAML comment that silently parsed as nothing.
+    - JSON exports carry a tags array on each conversation object.
+    - Plain text exports get a Tags line in the metadata header.
+    - Batch exports record the tags in export_summary.json.
+    
+    Input is cleaned rather than rejected: a leading "#" comes off, spaces
+    inside a tag become hyphens, characters Obsidian won't accept in a tag are
+    dropped, case is normalized, and duplicates collapse. Tags that a YAML
+    parser would otherwise read as a number, date or boolean get quoted.
+    
+    Tags describe the export at hand, so the browse page no longer writes
+    edits back over the saved default the way it does for project and
+    contributor. The options page setting is now just a starting value.
+    
+    Also refreshes the README frontmatter example, which still listed the
+    placeholder categories removed in 786151d.
+    
+    Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+
+commit 37cf85ac420a8d5092ca85c678243643549bc101
+Author: Paul Lee <paul@strivenword.com>
+Date:   Fri Aug 21 08:07:44 2026 -0400
+
+    Add tags input field to export UI
+    
+    Implement tags as a user-configurable field across all export interfaces:
+    - Popup (export single/all from extension button)
+    - Browse page (export from conversation browser)
+    - Options page (set default tags)
+    
+    Tags are now stored in extension settings, defaulted on load, and persisted when edited. The field accepts comma-separated values and is stamped into the frontmatter like project and contributor.
+    
+    Co-Authored-By: Claude Haiku 4.5 <noreply@anthropic.com>
+
+commit 786151d7e781e61aa6033a158b879c267067f89c
+Author: Paul Lee <paul@strivenword.com>
+Date:   Fri Aug 21 07:30:49 2026 -0400
+
+    Remove unimplemented frontmatter placeholder categories
+    
+    The artifacts_produced, decisions_made, open_questions, next_actions, and linked_notes fields were placeholders intended to be filled in by a live skill, but they are never actually populated by this mechanical export. Removed them from the frontmatter schema to keep the export output clean and accurate.
+    
+    Co-Authored-By: Claude Haiku 4.5 <noreply@anthropic.com>
+
+commit 43577467736d2371c83288f8a86b3ce2bfc8719e
+Author: Steve Schneider <steve@sunyit.edu>
+Date:   Sat Jul 18 11:26:51 2026 -0400
+
+    Patch upstream XSS (#12) + manifest scope, swap theme to green (v1.4.1)
+
+commit 896cf089b1970953ba26a65989a048c7f025bacf
+Author: Steve Schneider <steve@sunyit.edu>
+Date:   Sat Jul 18 09:29:42 2026 -0400
+
+    Document provenance and license status
+
+commit 00521765e7a9e497b4ec2beb3260b183c5492675
+Author: Steve Schneider <steve@sunyit.edu>
+Date:   Sat Jul 18 09:14:16 2026 -0400
+
+    Add Frontgraph: YAML frontmatter matching a //convo skill schema, project/model filters, checkbox export
+
+commit e4134d446570a643ee9762ceb6cf05ae3b3a7c41
+Merge: 8d38e84 02f9fc6
+Author: socketteer <lreyn@umich.edu>
+Date:   Tue Apr 28 23:54:52 2026 -0700
+
+    Merge pull request #10 from nomeforme/main
+    
+    Add attachment and truncation metadata to markdown export, Add Opus 4.5, Sonnet 4.6, and Opus 4.6
+
+commit 02f9fc611e4365c5ada8ba96a1a0600a332a105a
+Author: nomeforme <143119811+nomeforme@users.noreply.github.com>
+Date:   Wed Mar 18 01:54:41 2026 +0100
+
+    Add Opus 4.5, Sonnet 4.6, and Opus 4.6 model support
+    
+    Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
+
+commit c681d26a17cda354520c07c6ee95e1b2dda05407
+Author: nomeforme <143119811+nomeforme@users.noreply.github.com>
+Date:   Wed Mar 18 01:47:39 2026 +0100
+
+    Revert extension name back to original
+    
+    Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
+
+commit 318d4a7a72c584a7c1e2159aec84177d62225d76
+Author: nomeforme <143119811+nomeforme@users.noreply.github.com>
+Date:   Sun Feb 22 16:56:26 2026 +0100
+
+    Add attachment and truncation metadata to markdown export
+    
+    Markdown export was missing truncated flag and attachment info
+    (file_name, file_size, file_type, extracted_content) that JSON
+    export includes. Also rename extension to "- Local" for dev use.
+    
+    Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
+
+commit 8d38e8480b6b9c28f7e814cc92379b230efe1a9e
+Author: socketteer <moire@generative.ink>
+Date:   Sun Oct 26 19:30:11 2025 -0700
+
+    add haiku 4.5
+
+commit f2b6b702bd4235a310eb3ab97f8c40db8e4438d6
+Author: socketteer <moire@generative.ink>
+Date:   Sat Oct 4 17:29:11 2025 -0700
+
+    add Claude Sonnet 4.5
+
+commit 930a3f8798312a1710bbfb48f6ebad5f300f2c16
+Author: socketteer <moire@generative.ink>
+Date:   Sat Aug 30 21:10:04 2025 -0700
+
+    update readme to include note about long_conversation_reminder injections
+
+commit 11796021b64d81c8a0a65740ea8c2e070f9edb6e
+Author: socketteer <moire@generative.ink>
+Date:   Mon Aug 25 19:42:49 2025 -0700
+
+    Add Claude Conversation Exporter Chrome extension
+    
+    Features:
+    - Export individual conversations or bulk export all conversations
+    - Multiple formats: JSON (with full data), Markdown, Plain Text
+    - Browse page with search, filter by model, and sort capabilities
+    - Automatic model inference for conversations with null models (default model)
+    - Branch-aware exports (only exports current conversation branch)
+    - ZIP archive creation for bulk exports with progress tracking
+    - Organization ID configuration via options page
+    
+    Key capabilities:
+    - Preserves complete model information (unlike official Claude.ai export)
+    - Infers historical models based on conversation date
+    - Plain text format uses Human:/Assistant: prefixes (abbreviated to H:/A:)
+    - Handles conversation branches correctly
+    - Beautiful UI with gradient-themed icons and header graphics
+    
+    Technical implementation:
+    - Manifest V3 Chrome extension
+    - Content script injection for Claude.ai pages
+    - Background service worker for tab management
+    - JSZip integration for creating ZIP archives
+    - Shared utilities for code reuse
+    
+    Created by Claude Opus 4.1 in collaboration with human developer
+
+commit bfc168cafc1f93c0c88e43e7cc71367011f70fd3
+Author: socketteer <moire@generative.ink>
+Date:   Mon Aug 25 15:11:46 2025 -0700
+
+    add why export section to readme
+
+commit 1cd6448aa15daeca6935c4d26557985ecfa326b5
+Author: socketteer <moire@generative.ink>
+Date:   Sat Aug 23 07:46:08 2025 -0700
+
+    fix model release dates
+
+commit 554bb4e1d5a7b93cbe7da3e85919fbed83c6fb35
+Author: socketteer <moire@generative.ink>
+Date:   Sat Aug 23 07:45:35 2025 -0700
+
+    fix model release dates
+
+commit f92ce89ef434e7cf2c98d014e36b61a3de4b17f7
+Author: socketteer <moire@generative.ink>
+Date:   Sat Aug 23 07:15:54 2025 -0700
+
+    abbreviate Human/Assistant to H/A after first occurrence
+
+commit ff4c2073244bf69554b99ed2af23152b16f61646
+Author: socketteer <moire@generative.ink>
+Date:   Sat Aug 23 07:05:07 2025 -0700
+
+    add files
