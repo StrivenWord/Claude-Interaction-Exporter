@@ -13,19 +13,19 @@ header:
       url: "https://github.com/StrivenWord/Claude-Interaction-Exporter"
 feature_row:
   - title: "One-Click Export"
-    excerpt: "Export the conversation you're viewing straight from the toolbar popup, in Markdown, plain text, or JSON."
+    excerpt: "Export the conversation you're viewing straight from the toolbar popup, in Markdown with structured frontmatter, plain text, or JSON."
     url: /usage/
     btn_label: "See Usage"
     btn_class: "btn--primary"
+  - title: "New to Browser Extensions?"
+    excerpt: "An interactive tutorial on how Chromium extensions work, what developer mode is, and how to judge an extension before you install it."
+    url: "https://chromium-extensions.ai.studio/"
+    btn_label: "Open the Tutorial"
+    btn_class: "btn--primary"
   - title: "Browse & Bulk Export"
-    excerpt: "Search, filter, and sort every conversation and Cowork session, then bulk export matches to a ZIP."
+    excerpt: "Search, filter, and sort every conversation and Cowork session, then bulk export everything that matches to a ZIP."
     url: /features/
     btn_label: "See Features"
-    btn_class: "btn--primary"
-  - title: "Frontgraph-Ready Frontmatter"
-    excerpt: "Markdown exports carry structured YAML frontmatter, so files land in Obsidian or any note system already organized."
-    url: /usage/#frontmatter
-    btn_label: "Learn More"
     btn_class: "btn--primary"
 ---
 
@@ -33,7 +33,7 @@ feature_row:
 
 ## What it is
 
-Claude Interaction Exporter is a Chromium browser extension that saves your own Claude.ai conversations to files on your computer. It has no backend: the extension talks to Claude.ai using the same web API the site itself uses, builds the file in your browser, and hands it to you as a download. There is no account to create, no analytics, and no third-party service in between.
+Claude Interaction Exporter is a Chromium browser extension that saves your own Claude.ai conversations to files on your computer. It works entirely between your browser and Claude.ai: the extension asks for your conversations using the account you are already signed in to, builds the file inside your browser, and hands it to you as a download. Claude.ai is the only site it is permitted to contact, so nothing reaches the developer or any other service — there is no account to create and no analytics.
 
 ## Why it exists
 
@@ -43,7 +43,7 @@ It also records something Claude.ai's own export leaves out: **which model each 
 
 ## Getting started
 
-The extension is not in the Chrome Web Store yet, so you install it by loading its folder into your browser — about five minutes' work, and no build tools required.
+The extension is not published to the Chrome Web Store at this time, so you install it by loading its folder into your browser — about five minutes' work, and no build tools required.
 
 1. **[Installation]({{ '/installation/' | relative_url }})** — download the ZIP or clone the repository, load the folder unpacked, and enter your organization ID once.
 2. **[Usage]({{ '/usage/' | relative_url }})** — run your first export, then move on to browsing and bulk exports.
@@ -52,9 +52,12 @@ Already installed and wondering what else it does? See [Features]({{ '/features/
 
 ## Never installed an extension this way before?
 
-Loading an extension from GitHub is not hard, but it does ask you to make a judgement the Chrome Web Store normally makes on your behalf — and Chrome will warn you about it more than once. [**Browsers and Extensions**]({{ '/browsers-and-extensions/' | relative_url }}) is a twenty-minute primer written for exactly that moment: what a browser is actually made of, why this extension runs in Chrome and Edge but not Firefox or Safari, what the files in the folder are, and how to read the permissions an extension asks for so the decision to trust it is one you can defend.
+Two places to start, covering the same ground:
 
-You do not need it to follow the installation steps. It is there so that following them does not feel like guesswork.
+- [**The interactive tutorial**](https://chromium-extensions.ai.studio/) — hands-on, with a clickable browser blueprint, a sample extension to take apart, and a permission-auditing exercise.
+- [**Browsers and Extensions**]({{ '/browsers-and-extensions/' | relative_url }}) — the short written version, using this extension as the worked example.
+
+Either one answers the questions the installation steps assume: what an extension actually is, why this one runs in Chrome and Edge but not Firefox or Safari, and how to read the permissions an extension asks for before you agree to them.
 
 ## Status
 

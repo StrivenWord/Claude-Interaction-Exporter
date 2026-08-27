@@ -4,7 +4,7 @@ permalink: /installation/
 excerpt: "Get the extension's files, load them into your browser, and connect it to your Claude.ai account."
 ---
 
-Claude Interaction Exporter is not yet in the Chrome Web Store, so you install it the way developers install an extension they are working on: you put the extension's folder somewhere on your computer, then point your browser at that folder. This is called **loading unpacked**, and it takes about five minutes.
+You install Claude Interaction Exporter from its own folder: put the extension's files somewhere on your computer, turn on developer mode in your browser, and point the browser at that folder. This is called **loading unpacked**, and it takes about five minutes.
 
 There are three stages:
 
@@ -18,29 +18,31 @@ There are three stages:
 Firefox and Safari cannot run this extension. They are built on different rendering engines, which expect a differently packaged add-on — an `.xpi` for Firefox, an Xcode app bundle for Safari — so this is not a matter of testing but of format. [Browsers and Extensions]({{ '/browsers-and-extensions/' | relative_url }}) explains why.
 {: .notice--warning}
 
-If any of the words above are unfamiliar — extension, unpacked, developer mode — you may want twenty minutes with [Browsers and Extensions]({{ '/browsers-and-extensions/' | relative_url }}) first. It covers what a browser is made of, what is inside an extension, and how to read the permissions one asks for. This page assumes none of it, but the procedure makes far more sense with it.
+If terms like *extension*, *unpacked*, or *developer mode* are new to you, [Browsers and Extensions]({{ '/browsers-and-extensions/' | relative_url }}) covers them, and so does the [interactive tutorial](https://chromium-extensions.ai.studio/) it is based on.
 
-## Before you start: what loading unpacked means
+## Before you start: What loading unpacked means
 
-It is worth being clear about this, because Chrome is about to warn you and the warnings are not empty.
+Two things follow from installing an extension this way, and Chrome will warn you about both.
 
-Installing from the Chrome Web Store gets you a reviewed, scanned package that Chrome then keeps patched on its own, and that Google can disable remotely if it turns out to be malicious. Loading a folder yourself gets you none of that. Nothing has vetted the code but you, and nothing will update it but you.
+**Nothing has checked this code but you.** No scanner, no reviewer, no store.
 
-The rule everyone who works with extensions eventually settles on: load unpacked only code you wrote, or code from an open repository whose files you have actually read.
+**Nothing will update it but you.** A folder does not patch itself, and Chrome will not tell you a new version exists.
+
+Hence the rule everyone who works with extensions settles on: load unpacked only code you wrote, or code from an open repository whose files you have read.
 {: .notice--danger}
 
 You are entitled to hold this extension to that. It is set up so you can:
 
-- **Read the manifest.** [`manifest.json`](https://github.com/StrivenWord/Claude-Interaction-Exporter/blob/main/manifest.json) is the file that declares everything the extension may reach. Its `host_permissions` names exactly one site, `https://claude.ai/*`, and no wildcard. Outside claude.ai there is nothing it can read or contact.
-- **Read the code.** It is roughly a dozen plain JavaScript, HTML, and CSS files, none of them minified and none of them compiled. Searching them for `fetch(` shows you every request the extension makes and where it goes.
-- **Read the history.** The repository is public. Every commit is listed with its author, so you can see how the code got to be what it is.
-- **Check the claims.** [Privacy]({{ '/privacy/' | relative_url }}) sets out each permission and what it is used for, and mirrors [`PRIVACY.md`](https://github.com/StrivenWord/Claude-Interaction-Exporter/blob/main/PRIVACY.md) in the repository.
+- **Read the manifest.** [`manifest.json`](https://github.com/StrivenWord/Claude-Interaction-Exporter/blob/main/manifest.json) declares everything the extension may reach. Its `host_permissions` names exactly one site, `https://claude.ai/*`, with no wildcard.
+- **Read the code.** A dozen or so plain JavaScript, HTML, and CSS files, none minified, none compiled. Searching them for `fetch(` shows every request the extension makes and where it goes.
+- **Read the history.** The repository is public, and every commit is listed with its author.
+- **Check the claims.** [Privacy]({{ '/privacy/' | relative_url }}) sets out each permission and its use, mirroring [`PRIVACY.md`](https://github.com/StrivenWord/Claude-Interaction-Exporter/blob/main/PRIVACY.md) in the repository.
 
-None of that is a substitute for looking. [How to read a permission block]({{ '/browsers-and-extensions/#how-to-read-a-permission-block' | relative_url }}) walks through what to look for, using this extension's manifest and a hostile one side by side — a skill worth having the next time something asks you to load a folder.
+[How to read a permission block]({{ '/browsers-and-extensions/#how-to-read-a-permission-block' | relative_url }}) walks through what to look for, putting this extension's manifest next to a hostile one — a skill worth having the next time something asks you to load a folder.
 
 ## Stage 1: Get the files
 
-Pick whichever of the two methods you are more comfortable with. They produce the same files; the only real difference is how you get updates later.
+Both methods produce the same files. The difference is how you get updates later.
 
 | | Download the ZIP | Clone with Git |
 | --- | --- | --- |
@@ -54,45 +56,45 @@ GitHub will hand you the whole repository as a single ZIP archive. No account, n
 
 **1. Open the repository** at [github.com/StrivenWord/Claude-Interaction-Exporter](https://github.com/StrivenWord/Claude-Interaction-Exporter).
 
-**2. Click the green Code button.** It sits above the file list, to the right of the search box.
+**2. Click the green Code button,** above the file list and to the right of the search box.
 
-{% include figure image_path="/assets/images/install/github-code-button.png" alt="The GitHub page for the Claude-Interaction-Exporter repository, with the green Code button above the file list circled." caption="The repository front page. The green **Code** button, above and to the right of the file list, opens the menu of ways to get the code onto your own computer. Ignore the yellow banner about recent pushes and the **Contribute** and **Sync fork** buttons — those are for people editing the project." %}
+{% include figure image_path="/assets/images/install/github-code-button.png" alt="The GitHub page for the Claude-Interaction-Exporter repository, with the green Code button above the file list circled." caption="The green **Code** button opens the menu of ways to get the code onto your computer. The yellow banner and the **Contribute** and **Sync fork** buttons are for people editing the project — ignore them." %}
 
-**3. Click Download ZIP,** at the bottom of the menu that drops down.
+**3. Click Download ZIP,** the last item in the menu that drops down.
 
-{% include figure image_path="/assets/images/install/github-download-zip.png" alt="The opened Code menu, showing the Clone box with HTTPS, SSH and GitHub CLI tabs, then Open in GitHub Copilot app, Open with GitHub Desktop, and Download ZIP at the bottom, with an arrow pointing to Download ZIP." caption="**Download ZIP** is the last item in the menu. Everything above it — the **Clone** box with its HTTPS, SSH, and GitHub CLI tabs, and the GitHub Desktop and Copilot entries — is for other ways of getting the code, and none of it matters here." %}
+{% include figure image_path="/assets/images/install/github-download-zip.png" alt="The opened Code menu, showing the Clone box with HTTPS, SSH and GitHub CLI tabs, then Open in GitHub Copilot app, Open with GitHub Desktop, and Download ZIP at the bottom, with an arrow pointing to Download ZIP." caption="Everything above **Download ZIP** — the **Clone** box with its HTTPS, SSH, and GitHub CLI tabs, and the GitHub Desktop and Copilot entries — is for other ways of getting the code. Walk past it." %}
 
-The top half of that menu is where people get confused. The **Clone** box, and whether HTTPS, SSH, or GitHub CLI happens to be selected in it, is only relevant if you are cloning — Option B below. For a ZIP download you can walk straight past it to the bottom of the list.
+The top of that menu is where people get stuck. The **Clone** box, and which of HTTPS, SSH, or GitHub CLI happens to be selected in it, only matters if you are cloning — Option B below.
 {: .notice--info}
 
-**4. Find the downloaded file.** Your browser saves `Claude-Interaction-Exporter-main.zip`, normally to your Downloads folder. The `-main` suffix is the name of the repository's main branch, not a version number.
+**4. Find the downloaded file.** Your browser saves `Claude-Interaction-Exporter-main.zip`, normally to Downloads. The `-main` suffix is the name of the repository's main branch, not a version number.
 
 **5. Move the ZIP somewhere you intend to keep** — `Documents`, for instance — before unpacking. The folder you unpack has to stay put permanently; see the warning below.
 
 **6. Unpack it.**
 
-- **macOS** — double-click the ZIP file. Archive Utility unpacks it beside the archive and leaves a folder named `Claude-Interaction-Exporter-main`.
-- **Windows** — right-click the ZIP file and choose **Extract All…**, then confirm the destination and click **Extract**. Do not just double-click the ZIP: that opens a read-only preview window that *looks* like a folder, and Chrome cannot load an extension from it.
-- **Linux** — `unzip Claude-Interaction-Exporter-main.zip`, or use your file manager's **Extract Here**.
+- **macOS** — double-click the ZIP. Archive Utility unpacks it beside the archive, leaving a folder named `Claude-Interaction-Exporter-main`.
+- **Windows** — right-click the ZIP and choose **Extract All…**, then confirm the destination and click **Extract**. Do not just double-click it: that opens a read-only preview window that *looks* like a folder, and Chrome cannot load an extension from it.
+- **Linux** — `unzip Claude-Interaction-Exporter-main.zip`, or **Extract Here** in your file manager.
 
 **7. Open the resulting folder** and check that `manifest.json` sits directly inside it, not one level deeper.
 
-Some extractors nest the contents, leaving you with `Claude-Interaction-Exporter-main/Claude-Interaction-Exporter-main/manifest.json`. If that happens, the folder you want in the next stage is the inner one — the one that directly contains `manifest.json`.
+Some extractors nest the contents, leaving you with `Claude-Interaction-Exporter-main/Claude-Interaction-Exporter-main/manifest.json`. If that happens, the folder you want next is the inner one — the one that directly contains `manifest.json`.
 {: .notice--info}
 
 ### Option B: Clone the repository with Git
 
-Cloning makes a full copy of the repository on your computer, along with its history, so that updating later is a single command.
+Cloning makes a full copy of the repository, history included, so updating later is a single command.
 
-First, check that Git is installed. Open a terminal — **Terminal** on macOS or Linux, **Command Prompt**, **PowerShell**, or **Git Bash** on Windows — and run:
+First check that Git is installed. Open a terminal — **Terminal** on macOS or Linux, **Command Prompt**, **PowerShell**, or **Git Bash** on Windows — and run:
 
 ```bash
 git --version
 ```
 
-If that prints a version number, you have Git. If the command is not found, install it from [git-scm.com/downloads](https://git-scm.com/downloads) and open a new terminal window afterward.
+If that prints a version number, you have Git. If the command is not found, install it from [git-scm.com/downloads](https://git-scm.com/downloads) and open a new terminal afterward.
 
-Now move to wherever you keep projects and clone the repository:
+Now move to wherever you keep projects and clone:
 
 ```bash
 cd ~/Documents
@@ -101,14 +103,14 @@ git clone https://github.com/StrivenWord/Claude-Interaction-Exporter.git
 
 That creates a folder named `Claude-Interaction-Exporter` inside `~/Documents`. On Windows, use a path such as `cd %USERPROFILE%\Documents` instead.
 
-The command above is the HTTPS form, which works without setting anything up. The **SSH** and **GitHub CLI** tabs in GitHub's Clone box offer the same repository by other routes; both need credentials configured first, and neither gives you anything extra here.
+That command is the HTTPS form, which works without setting anything up. The **SSH** and **GitHub CLI** tabs in GitHub's Clone box offer the same repository by other routes; both want credentials configured first, and neither gives you anything extra here.
 {: .notice--info}
 
-To update later, run `git pull` from inside that same folder, then reload the extension — see [Updating the extension](#updating-the-extension).
+To update later, run `git pull` in that folder and reload the extension — see [Updating the extension](#updating-the-extension).
 
 ### What should be in the folder
 
-Whichever route you took, open the folder and look at what you have. There is no build output and nothing hidden: these files *are* the extension.
+There is no build output and nothing hidden. These files *are* the extension.
 
 | | |
 | --- | --- |
@@ -121,45 +123,45 @@ Whichever route you took, open the folder and look at what you have. There is no
 | `utils.js`, `jszip.min.js` | Shared helpers, and a local copy of JSZip for building ZIP archives. |
 | `icon16.png`, `icon48.png`, `icon128.png` | The toolbar and extensions-page icons. |
 
-What each kind of file does, and why an extension is built out of these four parts, is covered under [What is inside an extension]({{ '/browsers-and-extensions/#what-is-inside-an-extension' | relative_url }}).
+Why an extension is built out of these parts is covered under [What is inside an extension]({{ '/browsers-and-extensions/#what-is-inside-an-extension' | relative_url }}).
 
-The one thing to confirm before moving on is that `manifest.json` is *directly* inside the folder you are looking at. That is the folder Chrome needs.
+The one thing to confirm before moving on: `manifest.json` is *directly* inside the folder you are looking at. That is the folder Chrome needs.
 
 ### Keep the folder where you put it
 
-Chrome does not copy an unpacked extension into itself. It records the path to your folder and reads the files from that path every time the browser starts. If you later delete the folder, move it, or rename it, the extension breaks and Chrome reports it as missing or corrupted.
+Chrome does not copy an unpacked extension into itself. It records the path to your folder and reads the files from that path every time the browser starts. Delete, move, or rename the folder later and the extension breaks, reported as missing or corrupted.
 
-Put the folder somewhere permanent before loading it, and leave it there. Downloads folders and Desktop are risky, especially with macOS's "Optimize Storage" or any tool that periodically empties Downloads.
+Put the folder somewhere permanent before loading it, and leave it there. Downloads and Desktop are risky, especially with macOS's "Optimize Storage" or any tool that periodically empties Downloads.
 {: .notice--danger}
 
 ## Stage 2: Load the extension into your browser
 
-1. Open a new tab and go to `chrome://extensions/`. Typing that address is more reliable than hunting through menus; on Edge the equivalent is `edge://extensions/`, and Brave uses `brave://extensions/`.
-2. Turn on **Developer mode** with the toggle at the top right of that page. Three buttons appear — **Load unpacked**, **Pack extension**, **Update**.
+1. Open a new tab and go to `chrome://extensions/`. Typing that address beats hunting through menus; on Edge it is `edge://extensions/`, on Brave `brave://extensions/`.
+2. Turn on **Developer mode** with the toggle at the top right. Three buttons appear — **Load unpacked**, **Pack extension**, **Update**.
 3. Click **Load unpacked**.
 4. In the file picker, select the folder that directly contains `manifest.json` — `Claude-Interaction-Exporter-main` if you unpacked the ZIP, `Claude-Interaction-Exporter` if you cloned. Select the *folder itself*; do not open it and select `manifest.json`.
 5. A card titled **Claude Interaction Exporter** appears on the extensions page. That is it — the extension is installed.
-6. Pin it to the toolbar so it is one click away: click the puzzle-piece icon at the right of the address bar, find the extension in the list, and click the pin beside its name.
+6. Pin it to the toolbar so it is one click away: click the puzzle-piece icon at the right of the address bar, find the extension, and click the pin beside its name.
 
-Chrome will ask you to approve one permission: *Read and change your data on claude.ai.* That is the extension's only host permission, and claude.ai is the only site it can reach. The [Privacy]({{ '/privacy/' | relative_url }}) page explains each permission the extension requests and why.
+Chrome will ask you to approve one permission: *Read and change your data on claude.ai.* That is the extension's only host permission, and claude.ai is the only site it can reach. [Privacy]({{ '/privacy/' | relative_url }}) explains each permission and why it is requested.
 
 ### The warning Chrome will keep showing you
 
-Once developer mode is on, Chrome greets you at every startup with a prompt offering to disable your developer-mode extensions. Dismissing it leaves this extension working, and the prompt will come back next time.
+With developer mode on, Chrome greets you at every startup with a prompt offering to disable your developer-mode extensions. Dismissing it leaves this extension working, and the prompt will be back next time.
 
-It is not a fault, and it is not specific to this extension: Chrome cannot tell a folder you have read through from one you grabbed off a forum, so it asks about all of them. Treat it as a standing question rather than an annoyance — you should be able to name every unpacked extension you have loaded and say why you trusted it. If the list ever contains something you do not recognise, the prompt is doing exactly what it is for. More on this under [The warning Chrome shows at every startup]({{ '/browsers-and-extensions/#the-warning-chrome-shows-at-every-startup' | relative_url }}).
+It is not a fault, and it is not about this extension in particular: Chrome cannot tell a folder you have read through from one you grabbed off a forum, so it asks about all of them. Treat it as a standing question — you should be able to name every unpacked extension you have loaded and say why you trusted it. More under [The warning Chrome shows at every startup]({{ '/browsers-and-extensions/#the-warning-chrome-shows-at-every-startup' | relative_url }}).
 
 ### Confirm which build is loaded
 
-The extension's version is written in small print at the bottom of the toolbar popup and at the top right of the browse page — for example `1.5.3 — 2026-08-21`. After any update, check that line to be sure the reload actually took effect.
+The extension's version is in small print at the bottom of the toolbar popup and at the top right of the browse page — for example `1.5.3 — 2026-08-21`. After any update, check that line to be sure the reload took effect.
 
 ## Stage 3: Connect your Claude.ai account
 
-The extension asks Claude.ai's API for your conversations, and the address of that API includes your **organization ID**. Claude.ai does not display this ID anywhere in its interface, so you have to fetch it once yourself. It is a one-time step.
+The extension asks Claude.ai's API for your conversations, and the address of that API includes your **organization ID**. Claude.ai does not display this ID anywhere in its interface, so you fetch it once yourself.
 
 1. Sign in to [claude.ai](https://claude.ai) in the same browser.
 2. In a new tab, open `https://claude.ai/api/organizations`. The page shows raw JSON. That is expected — it is not an error, and it is your own account data.
-3. Find the value after `"uuid":`. It looks like `1a2b3c4d-5e6f-7890-abcd-ef1234567890`. Copy it **without** the surrounding quotation marks, keeping every dash.
+3. Find the value after `"uuid":`. It looks like `1a2b3c4d-5e6f-7890-abcd-ef1234567890`. Copy it **without** the quotation marks, keeping every dash.
 4. Right-click the extension's toolbar icon and choose **Options**, or click the icon and use the setup link in the popup.
 5. Paste the ID into **Organization ID** and click **Save Settings**.
 6. Click **Test Connection**. A successful test reports how many conversations it found. If it does not, see [When something goes wrong](#when-something-goes-wrong).
@@ -169,22 +171,22 @@ If you belong to more than one Claude organization — a personal account and a 
 
 ### Optional: set your export defaults
 
-The Options page also holds three values that pre-fill every export's frontmatter, so you do not retype them each time:
+The Options page also holds three values that pre-fill every export's frontmatter:
 
 - **Project** — a project key, such as `pdf2md`
 - **Contributor** — your name, or whoever the transcript should be credited to
 - **Tags** — a comma-separated starting list, such as `research, coursework`
 
-Each has its own Save button, and any individual export can override all three. What these values do to the exported file is covered under [Frontmatter]({{ '/usage/#frontmatter' | relative_url }}).
+Each has its own Save button, and any individual export can override all three. What they do to the exported file is covered under [Frontmatter]({{ '/usage/#frontmatter' | relative_url }}).
 
 ## Updating the extension
 
-An unpacked extension never updates itself. Chrome patches Web Store extensions in the background; it will not do that here, and it will not tell you a new version exists. Keeping this one current is your job, and the reason to check occasionally is the same reason any software gets updates — fixes reach you only when you fetch them. The [Change Log]({{ '/changelog/' | relative_url }}) is where new versions are announced.
+An unpacked extension never updates itself, and nothing will tell you a new version exists. Keeping this one current is your job. The [Change Log]({{ '/changelog/' | relative_url }}) is where new versions are announced.
 {: .notice--warning}
 
 Updating is two steps: replace the files, then tell Chrome to re-read them.
 
-**If you downloaded the ZIP:** download it again, unpack it, and replace the old folder's contents with the new ones. If you unpack to a *new* folder rather than replacing the old one, remove the extension from `chrome://extensions/` and load the new folder unpacked, since Chrome is still pointed at the old path.
+**If you downloaded the ZIP:** download it again, unpack it, and replace the old folder's contents with the new ones. If you unpack to a *new* folder instead, remove the extension from `chrome://extensions/` and load the new folder unpacked, since Chrome is still pointed at the old path.
 
 **If you cloned with Git:**
 
@@ -202,7 +204,7 @@ Your organization ID and export defaults survive updates — they live in your b
 | Symptom | What to do |
 | --- | --- |
 | **Load unpacked** is not on the page | Developer mode is off. Toggle it on at the top right of `chrome://extensions/`. |
-| "Manifest file is missing or unreadable" | You selected the wrong folder. Select the folder that directly contains `manifest.json` — not its parent, and not `manifest.json` itself. If your extractor nested the contents, use the inner folder. |
+| "Manifest file is missing or unreadable" | Wrong folder. Select the folder that directly contains `manifest.json` — not its parent, and not `manifest.json` itself. If your extractor nested the contents, use the inner folder. |
 | Chrome will not open the folder in the file picker | On Windows, you are probably still inside the ZIP preview window rather than an unpacked folder. Right-click the ZIP → **Extract All…**, then select the extracted folder. |
 | You cannot find **Download ZIP** in the Code menu | It is the last item, below **Open with GitHub Desktop**. If the menu shows only **Codespaces**, click the **Local** tab at its top left. |
 | The extension card shows an error or "missing" after a restart | The folder was moved, renamed, or deleted. Put it back, or remove the card and load the folder again from its new location. |
