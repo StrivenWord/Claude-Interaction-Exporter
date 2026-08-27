@@ -45,10 +45,16 @@ It also records something Claude.ai's own export leaves out: **which model each 
 
 The extension is not in the Chrome Web Store yet, so you install it by loading its folder into your browser — about five minutes' work, and no build tools required.
 
-1. **[Installation]({{ '/installation/' | relative_url }})** — clone the repository or download the ZIP, load the folder unpacked, and enter your organization ID once.
+1. **[Installation]({{ '/installation/' | relative_url }})** — download the ZIP or clone the repository, load the folder unpacked, and enter your organization ID once.
 2. **[Usage]({{ '/usage/' | relative_url }})** — run your first export, then move on to browsing and bulk exports.
 
 Already installed and wondering what else it does? See [Features]({{ '/features/' | relative_url }}).
+
+## Never installed an extension this way before?
+
+Loading an extension from GitHub is not hard, but it does ask you to make a judgement the Chrome Web Store normally makes on your behalf — and Chrome will warn you about it more than once. [**Browsers and Extensions**]({{ '/browsers-and-extensions/' | relative_url }}) is a twenty-minute primer written for exactly that moment: what a browser is actually made of, why this extension runs in Chrome and Edge but not Firefox or Safari, what the files in the folder are, and how to read the permissions an extension asks for so the decision to trust it is one you can defend.
+
+You do not need it to follow the installation steps. It is there so that following them does not feel like guesswork.
 
 ## Status
 

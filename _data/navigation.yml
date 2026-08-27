@@ -5,6 +5,8 @@ main:
     url: /installation/
   - title: "Usage"
     url: /usage/
+  - title: "Browsers & Extensions"
+    url: /browsers-and-extensions/
   - title: "Privacy"
     url: /privacy/
   - title: "Change Log"
