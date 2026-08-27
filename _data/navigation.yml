@@ -1,0 +1,13 @@
+main:
+  - title: "Features"
+    url: /features/
+  - title: "Installation"
+    url: /installation/
+  - title: "Usage"
+    url: /usage/
+  - title: "Privacy"
+    url: /privacy/
+  - title: "Change Log"
+    url: /changelog/
+  - title: "GitHub"
+    url: "https://github.com/StrivenWord/Claude-Interaction-Exporter"
