@@ -19,14 +19,18 @@ chrome.runtime.onInstalled.addListener(() => {
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'ensureContentScript') {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      if (tabs[0]) {
-        chrome.scripting.executeScript({
-          target: { tabId: tabs[0].id },
-          files: ['utils.js', 'content.js']
-        }, () => {
-          sendResponse({ success: true });
-        });
+      if (!tabs[0]) {
+        // Always respond, even on this unlikely path -- otherwise the
+        // waiting caller's message channel hangs instead of failing.
+        sendResponse({ success: false, error: 'No active tab found' });
+        return;
       }
+      chrome.scripting.executeScript({
+        target: { tabId: tabs[0].id },
+        files: ['utils.js', 'content.js']
+      }, () => {
+        sendResponse({ success: !chrome.runtime.lastError, error: chrome.runtime.lastError?.message });
+      });
     });
     return true;
   }

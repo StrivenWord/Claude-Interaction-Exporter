@@ -7,6 +7,31 @@ async function getOrgId() {
   });
 }
 
+// Send a message to the content script on tabId, and if nothing is listening
+// yet -- a tab left open since before install/update never gets the content
+// script until reloaded -- ask the background service worker to inject it,
+// then retry once. Without this, that case fails silently until the user
+// reloads the tab by hand.
+function sendToContentScript(tabId, message) {
+  return new Promise((resolve) => {
+    chrome.tabs.sendMessage(tabId, message, (response) => {
+      const missingReceiver = chrome.runtime.lastError &&
+        /Receiving end does not exist|Could not establish connection/.test(chrome.runtime.lastError.message || '');
+
+      if (!missingReceiver) {
+        resolve({ response, lastError: chrome.runtime.lastError });
+        return;
+      }
+
+      chrome.runtime.sendMessage({ action: 'ensureContentScript' }, () => {
+        chrome.tabs.sendMessage(tabId, message, (retryResponse) => {
+          resolve({ response: retryResponse, lastError: chrome.runtime.lastError });
+        });
+      });
+    });
+  });
+}
+
 // Check if org ID is configured on popup load
 document.addEventListener('DOMContentLoaded', async () => {
   const orgId = await getOrgId();
@@ -104,23 +129,22 @@ document.getElementById('exportCurrent').addEventListener('click', async () => {
       ? { action: 'exportTask', sessionId: id, ...common }
       : { action: 'exportConversation', conversationId: id, orgId, ...common };
 
-    chrome.tabs.sendMessage(tab.id, message, (response) => {
-      if (chrome.runtime.lastError) {
-        console.error('Chrome runtime error:', chrome.runtime.lastError);
-        showStatus(`Error: ${chrome.runtime.lastError.message}`, 'error');
-        button.disabled = false;
-        return;
-      }
-
-      if (response?.success) {
-        showStatus(`${kind === 'task' ? 'Task' : 'Conversation'} exported successfully!`, 'success');
-      } else {
-        const errorMsg = response?.error || 'Export failed';
-        console.error('Export failed:', errorMsg, response?.details);
-        showStatus(errorMsg, 'error');
-      }
+    const { response, lastError } = await sendToContentScript(tab.id, message);
+    if (lastError) {
+      console.error('Chrome runtime error:', lastError);
+      showStatus(`Error: ${lastError.message}`, 'error');
       button.disabled = false;
-    });
+      return;
+    }
+
+    if (response?.success) {
+      showStatus(`${kind === 'task' ? 'Task' : 'Conversation'} exported successfully!`, 'success');
+    } else {
+      const errorMsg = response?.error || 'Export failed';
+      console.error('Export failed:', errorMsg, response?.details);
+      showStatus(errorMsg, 'error');
+    }
+    button.disabled = false;
     } catch (error) {
       showStatus(error.message, 'error');
       button.disabled = false;
@@ -147,7 +171,7 @@ document.getElementById('exportCurrent').addEventListener('click', async () => {
       
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
-          chrome.tabs.sendMessage(tab.id, {
+          const { response, lastError } = await sendToContentScript(tab.id, {
       action: 'exportAllConversations',
       orgId,
       format: document.getElementById('format').value,
@@ -155,27 +179,27 @@ document.getElementById('exportCurrent').addEventListener('click', async () => {
       project: document.getElementById('project').value.trim(),
       contributor: document.getElementById('contributor').value.trim(),
       tags: document.getElementById('tags').value.trim()
-    }, (response) => {
-      if (chrome.runtime.lastError) {
-        console.error('Chrome runtime error:', chrome.runtime.lastError);
-        showStatus(`Error: ${chrome.runtime.lastError.message}`, 'error');
-        button.disabled = false;
-        return;
-      }
-      
-      if (response?.success) {
-        if (response.warnings) {
-          showStatus(response.warnings, 'info');
-        } else {
-          showStatus(`Exported ${response.count} conversations!`, 'success');
-        }
-      } else {
-        const errorMsg = response?.error || 'Export failed';
-        console.error('Export failed:', errorMsg, response?.details);
-        showStatus(errorMsg, 'error');
-      }
-      button.disabled = false;
     });
+
+    if (lastError) {
+      console.error('Chrome runtime error:', lastError);
+      showStatus(`Error: ${lastError.message}`, 'error');
+      button.disabled = false;
+      return;
+    }
+
+    if (response?.success) {
+      if (response.warnings) {
+        showStatus(response.warnings, 'info');
+      } else {
+        showStatus(`Exported ${response.count} conversations!`, 'success');
+      }
+    } else {
+      const errorMsg = response?.error || 'Export failed';
+      console.error('Export failed:', errorMsg, response?.details);
+      showStatus(errorMsg, 'error');
+    }
+    button.disabled = false;
     } catch (error) {
       showStatus(error.message, 'error');
       button.disabled = false;

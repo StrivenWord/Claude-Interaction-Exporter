@@ -1005,7 +1005,6 @@ function setupEventListeners() {
 
   // Type filter
   document.getElementById('typeFilter').addEventListener('change', (e) => {
-    currentTypeFilter = e.target.value;
     const scheduledOnlyGroup = document.getElementById('scheduledOnlyGroup');
     if (e.target.value === 'cowork') {
       scheduledOnlyGroup.style.display = 'flex';
