@@ -103,10 +103,19 @@ function formatDateYYYYMMDD(isoString) {
   return d.toISOString().slice(0, 10);
 }
 
-// Quote a scalar for safe YAML embedding (titles/URLs may contain ": ", quotes, etc.)
+// Quote a scalar for safe YAML embedding. Titles, contributor names, and
+// summaries are either user-typed or pulled from free-text API fields, so
+// they may contain ": ", quotes, or a stray newline from pasted text — all
+// three break an unescaped double-quoted scalar, which is why every field
+// built from one of those sources must route through here rather than being
+// interpolated into renderFrontmatter's pairs directly.
 function yamlScalar(value) {
   const str = String(value ?? '');
-  return `"${str.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+  return `"${str
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/\r\n|\r|\n/g, '\\n')
+    .replace(/\t/g, '\\t')}"`;
 }
 
 // Collapse a multi-paragraph API string (e.g. summary) to one safe YAML line
@@ -158,6 +167,14 @@ function withExportTags(data, tags) {
   return { ...data, tags: normalizeTags(tags) };
 }
 
+// Bumped when a field in buildFrontgraphFrontmatter/buildTaskFrontmatter is
+// added, renamed, or reinterpreted, so a parser reading an export later can
+// tell which shape it's looking at. Not a per-document revision counter —
+// the same export never changes after being written, only future exports do.
+// var, not const: this file is injected twice (see the file header), and a
+// duplicate top-level const/let would throw on the second injection.
+var FRONTGRAPH_VERSION = 1;
+
 // Emit a frontmatter block from ordered [key, value] pairs. Values arrive
 // pre-formatted — wrap anything user-authored in yamlScalar first. A null
 // value drops the key entirely, so exports of different source types share one
@@ -201,13 +218,14 @@ function buildFrontgraphFrontmatter(data, opts = {}) {
     ['updated', yamlScalar(data.updated_at || '')],
     ['type', 'conversation'],
     ['status', 'reference'],
+    ['frontgraph-version', FRONTGRAPH_VERSION],
     ['project', yamlScalar(project)],
-    ['contributor', opts.contributor || ''],
+    ['contributor', yamlScalar(opts.contributor || '')],
     ['tags', normalizeTags(opts.tags)],
     ['source', 'claude-conversation'],
-    ['source_url', yamlScalar(`https://claude.ai/chat/${data.uuid || ''}`)],
-    ['model', data.model || ''],
-    ['session_id', data.uuid || ''],
+    ['source-url', yamlScalar(`https://claude.ai/chat/${data.uuid || ''}`)],
+    ['model', yamlScalar(data.model || '')],
+    ['session-id', yamlScalar(data.uuid || '')],
     ['summary', yamlScalar(collapseWhitespace(data.summary))]
   ]);
 }
@@ -679,17 +697,18 @@ function buildTaskFrontmatter(session, opts = {}) {
     ['updated', yamlScalar(session.updated_at || '')],
     ['type', 'task'],
     ['status', 'reference'],
+    ['frontgraph-version', FRONTGRAPH_VERSION],
     ['project', yamlScalar(opts.project || 'None')],
-    ['contributor', opts.contributor || ''],
+    ['contributor', yamlScalar(opts.contributor || '')],
     ['tags', normalizeTags(opts.tags)],
     ['source', 'claude-cowork'],
-    ['source_url', yamlScalar(`https://claude.ai/cowork/${session.id}`)],
+    ['source-url', yamlScalar(`https://claude.ai/cowork/${session.id}`)],
     ['routine', session.routine ? yamlScalar(session.routine) : null],
-    ['trigger_id', session.trigger_id],
+    ['trigger-id', session.trigger_id ? yamlScalar(session.trigger_id) : null],
     ['scheduled', String(session.scheduled)],
-    ['fire_reason', session.fire_reason],
-    ['model', session.model || ''],
-    ['session_id', session.id]
+    ['fire-reason', session.fire_reason ? yamlScalar(session.fire_reason) : null],
+    ['model', yamlScalar(session.model || '')],
+    ['session-id', yamlScalar(session.id)]
   ]);
 }
 

@@ -116,22 +116,25 @@ created: "2026-07-17T19:23:53.603854Z"
 updated: "2026-07-17T20:25:25.293495Z"
 type: conversation
 status: reference
+frontgraph-version: 1
 project: "pdf2md"
-contributor: Steve
+contributor: "Steve"
 tags:
   - research
   - claude-api
 source: claude-conversation
-source_url: "https://claude.ai/chat/..."
-model: claude-opus-4-8
-session_id: ...
+source-url: "https://claude.ai/chat/..."
+model: "claude-opus-4-8"
+session-id: "..."
 summary: "..."
 ---
 ```
 
-`title`, `date`, `created`, `updated`, `source_url`, `model`, `session_id`, and `summary` come from data the Claude.ai API already returns — including the per-conversation summary Claude writes itself. `project` auto-fills from the conversation's Claude Project name, falling back to the literal `None`; the project field in the popup or browse page overrides either. `contributor` and `tags` come from what you type.
+All field names are hyphenated, not underscored — `source-url` and `session-id`, not `source_url`/`session_id`. `title`, `date`, `created`, `updated`, `source-url`, `model`, `session-id`, and `summary` come from data the Claude.ai API already returns — including the per-conversation summary Claude writes itself. `project` auto-fills from the conversation's Claude Project name, falling back to the literal `None`; the project field in the popup or browse page overrides either. `contributor` and `tags` come from what you type. Every free-text field (`title`, `contributor`, `project`, `model`, `session-id`, `summary`) is quoted and escaped, so a colon, quote mark, or pasted newline inside a title or a contributor name can't corrupt the block.
 
-Cowork sessions and scheduled tasks use `type: task` and `source: claude-cowork`, and add `routine`, `trigger_id`, `scheduled`, and `fire_reason`, so a run started by a schedule is distinguishable from one you started by hand.
+`frontgraph-version` identifies the shape of this frontmatter itself — bumped only when a field here is added, renamed, or reinterpreted, so a script or Dataview query reading these files later can tell which version it's looking at. It isn't a per-file revision counter; a given export never changes after being written.
+
+Cowork sessions and scheduled tasks use `type: task` and `source: claude-cowork`, and add `routine`, `trigger-id`, `scheduled`, and `fire-reason`, so a run started by a schedule is distinguishable from one you started by hand. `routine`, `trigger-id`, and `fire-reason` are omitted entirely (not written as empty) on a session that wasn't fired by a schedule.
 
 ### Tags
 
