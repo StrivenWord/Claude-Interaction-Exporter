@@ -25,12 +25,12 @@ The extension has no backend. It requests your conversations from Claude.ai usin
 ## Features
 
 - **Export the conversation you are viewing** — one click from the toolbar popup.
-- **Export Cowork sessions and scheduled tasks**, with their tool activity replayed into a readable transcript.
+- **Export Cowork sessions and scheduled tasks**, with their tool activity, searches, and images replayed into a readable transcript — and a clear label if only part of the log could be read.
 - **Browse, search, filter, and sort** your conversations and sessions from a single page.
 - **Bulk export** selected rows, or everything matching your current filters, as a ZIP.
 - **Three formats** — Markdown, plain text, or raw JSON.
 - **YAML frontmatter** on Markdown exports, so files land in Obsidian or any other note system with their metadata already structured.
-- **Model information is preserved.** Claude.ai's own export does not record which model each conversation used; this one does, and infers the model from the conversation's date when the API reports `null` (the default-model case).
+- **Model information is preserved.** Claude.ai's own export does not record which model each conversation used; this one does, and infers the model from the conversation's date when the API reports `null` (the default-model case) — recording which of the two it was, so a guess is never mistaken for a fact.
 - **Branch-aware.** Markdown and plain text follow the branch you have selected; JSON keeps every branch.
 
 ## Installation
@@ -80,7 +80,7 @@ The extension detects which of the two you are on and exports accordingly.
 
 Click the extension icon → **Browse All Conversations**. The browse page lists conversations and Cowork sessions in one table, where you can:
 
-- Search by name, and filter by model or by Claude Project
+- Search by name, and filter by model or by Claude Project. A Cowork session's model isn't in the list response, so it is read on demand the first time a filter needs it
 - Sort by created or updated date, name, or project
 - Check individual rows and click **Export Selected**
 - Click **Export All** to export every interaction matching your current filters
@@ -100,9 +100,33 @@ The popup's **Export All Conversations** button produces the same kind of ZIP, u
 | --- | --- | --- |
 | **Markdown** | Human-readable, with YAML frontmatter. Current branch only. | Obsidian, note-taking, coursework, writing |
 | **Plain text** | `Human:` / `Assistant:` prefixes, shortened to `H:`/`A:` after the first. Current branch only. | Pasting into another tool or a text editor |
-| **JSON** | Complete raw data, including every branch and all metadata. | Archiving, scripts, data analysis |
+| **JSON** | Conversations: the complete raw API payload, including every branch. Cowork sessions: the transcript in this extension's own shape — every content block, including ones this build can't render, but not the raw event log those blocks were derived from, which would double the file for nothing. | Archiving, scripts, data analysis |
 
-Every export is named `<YYYY-MM-DD>-<slug>.<ext>`, whichever format it is and whichever button produced it. Inside a ZIP, files that would otherwise share a name are suffixed `-2`, `-3`, and so on — which matters most for scheduled tasks, since every run of one routine carries the same title and so the same date-and-slug. The **Include metadata** checkbox in the popup and on the browse page controls the extra detail inside the file — per-message timestamps, attachment lists, the header block above the transcript, and, in Markdown exports of Cowork sessions, the tool-call and tool-result blocks themselves. YAML frontmatter is always written.
+Every export is named `<YYYY-MM-DD>-<slug>.<ext>`, whichever format it is and whichever button produced it.
+
+Inside a ZIP, a name that is already taken falls back to something that actually tells the files apart, rather than to a counter. This matters most for scheduled tasks, since every run of one routine carries the same title and therefore the same date and slug. The order tried is:
+
+| | Name | When |
+| --- | --- | --- |
+| 1 | `<YYYY-MM-DD>-<slug>.<ext>` | Always tried first, so nothing changes for a file whose name is free |
+| 2 | `<YYYY-MM-DD>T<HH-MM>-<slug>.<ext>` | On a collision — the time of day is what separates two runs of one routine |
+| 3 | `<YYYY-MM-DD>-<slug>-<id>.<ext>` | When the timestamps match too |
+| 4 | `…-2`, `…-3` | Last resort, so the process always terminates |
+
+### What goes inside
+
+Four checkboxes control the contents. All of them appear in both the popup and the browse page.
+
+| Checkbox | Default | What it adds |
+| --- | --- | --- |
+| **Include metadata** | on | Per-message timestamps, attachment lists, the header block above the transcript, and environment-event notes |
+| **Tool activity** | on | Tool calls, their results, and web-search results in Cowork exports |
+| **Images** | on | Image references — `![…](…)` in Markdown when the image has a URL, otherwise a note that it was there. The files themselves are never downloaded |
+| **Thinking** | off | Claude's reasoning blocks. Long, and rarely what an archive is for |
+
+Tool activity used to be bundled under **Include metadata**, which meant that turning metadata off silently deleted the substance of a task whose whole product was a written file. It is its own control now, and it applies to plain-text exports as well as Markdown.
+
+YAML frontmatter is always written.
 
 ### Frontmatter
 
@@ -116,7 +140,7 @@ created: "2026-07-17T19:23:53.603854Z"
 updated: "2026-07-17T20:25:25.293495Z"
 type: conversation
 status: reference
-frontgraph-version: 1
+frontgraph-version: 2
 project: "pdf2md"
 contributor: "Steve"
 tags:
@@ -125,6 +149,7 @@ tags:
 source: claude-conversation
 source-url: "https://claude.ai/chat/..."
 model: "claude-opus-4-8"
+model-source: reported
 session-id: "..."
 summary: "..."
 ---
@@ -132,9 +157,13 @@ summary: "..."
 
 All field names are hyphenated, not underscored — `source-url` and `session-id`, not `source_url`/`session_id`. `title`, `date`, `created`, `updated`, `source-url`, `model`, `session-id`, and `summary` come from data the Claude.ai API already returns — including the per-conversation summary Claude writes itself. `project` auto-fills from the conversation's Claude Project name, falling back to the literal `None`; the project field in the popup or browse page overrides either. `contributor` and `tags` come from what you type. Every free-text field (`title`, `contributor`, `project`, `model`, `session-id`, `summary`) is quoted and escaped, so a colon, quote mark, or pasted newline inside a title or a contributor name can't corrupt the block.
 
+`model-source` is either `reported` or `inferred`. Claude.ai returns no model for a conversation that used the default model of its day, so the `model` above is sometimes a date-based guess — and an export that wrote a guess exactly like a reported value would be asserting something it doesn't know. Cowork sessions gain a `models` list when more than one model answered during the run, which happens on a fallback or after a compaction.
+
 `frontgraph-version` identifies the shape of this frontmatter itself — bumped only when a field here is added, renamed, or reinterpreted, so a script or Dataview query reading these files later can tell which version it's looking at. It isn't a per-file revision counter; a given export never changes after being written.
 
 Cowork sessions and scheduled tasks use `type: task` and `source: claude-cowork`, and add `routine`, `trigger-id`, `scheduled`, and `fire-reason`, so a run started by a schedule is distinguishable from one you started by hand. `routine`, `trigger-id`, and `fire-reason` are omitted entirely (not written as empty) on a session that wasn't fired by a schedule.
+
+They also carry `complete`, and `truncated-reason` when `complete` is false. A Cowork session is read from a paged event stream rather than fetched in one piece, so unlike a conversation it is possible to get part of one. When that happens the export says so — in the frontmatter, in a note at the top of the transcript, and in the message the popup or browse page shows — instead of looking like a complete export of a shorter session. Nothing is written at all when no events could be read.
 
 ### Tags
 
@@ -172,10 +201,12 @@ No data ever reaches the developer or any third party: the extension has no back
 
 - Markdown and plain text export only the currently selected branch of a multi-branch conversation. Use JSON for all branches.
 - Large bulk exports can take several minutes: every bulk path fetches three interactions at a time with a pause between batches.
-- Plain-text exports of Cowork sessions carry the prose only. Tool activity appears in the Markdown and JSON forms.
 - Some special content types, notably artifacts, may not render perfectly in Markdown.
 - Attachment *files* are not downloaded. An attachment appears as a reference line with its name, size, and type; if Claude.ai extracted text from it, that text is included, but the original file is not.
 - An individual conversation can occasionally fail to fetch or parse. A batch skips it and reports it at the end rather than aborting.
+- The Cowork session list is followed past its page size, but stops after ten pages. If it stops there the browse page says so rather than presenting a short list as everything. Only sessions tagged `cowork-remote` are listed at all — that is what the web app's own sessions carry, and the parameters on this endpoint are undocumented enough that widening the query blind could return an unrelated set rather than more of the right one.
+- A Cowork session's event log is read in pages, and a session that is still being written to can only be read as far as it has got. Such an export is labelled `complete: false` rather than presented as whole.
+- Chat conversations carry only the text of each message; a chat's own thinking blocks and images are not exported. The Cowork checkboxes above apply to Cowork sessions.
 
 ## Troubleshooting
 
@@ -198,7 +229,8 @@ Claude-Conversation-Exporter/
 ├── content.js           # Runs on claude.ai; wires a popup message to the three below
 ├── content.css          # Styles for the content script
 ├── utils.js             # The transcript model, frontmatter, and all format renderers
-├── api.js               # Every Claude.ai endpoint the extension reads
+├── api.js               # Every Claude.ai endpoint the extension reads, and the
+│                        #   paged event-stream read behind Cowork exports
 ├── deliver.js           # Where a rendered file goes: download, or a batched ZIP
 ├── popup.html / .js     # Toolbar popup
 ├── options.html / .js   # Settings page

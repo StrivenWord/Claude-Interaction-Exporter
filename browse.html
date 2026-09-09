@@ -485,6 +485,18 @@
           <input type="checkbox" id="includeMetadata" checked>
           Metadata
         </label>
+        <label title="Tool calls and their results in Cowork session exports. This is the substance of a task, so it is on by default.">
+          <input type="checkbox" id="includeToolActivity" checked>
+          Tool activity
+        </label>
+        <label title="Images are written as Markdown references. The files themselves are never downloaded.">
+          <input type="checkbox" id="includeImages" checked>
+          Images
+        </label>
+        <label title="Claude's reasoning blocks. Long, and rarely what an archive is for, so off unless asked for.">
+          <input type="checkbox" id="includeThinking">
+          Thinking
+        </label>
         <label>
           frontgraph project:
           <input type="text" id="exportProject" placeholder="e.g. herk" style="width: 100px;">

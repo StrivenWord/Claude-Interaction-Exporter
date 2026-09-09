@@ -91,65 +91,129 @@ function coworkEventLog(body) {
     .sort((a, b) => Number(a.sequence_num || 0) - Number(b.sequence_num || 0));
 }
 
-// How long the stream may go without delivering an event before the replay is
-// treated as caught up, and a ceiling on any single page.
+// A page of the stream ends for one of three reasons, and only one of them is
+// positive evidence that the log has been read to its end.
+var COWORK_END_CLOSED = 'closed';        // the server finished sending this page
+var COWORK_END_IDLE = 'idle';            // it went quiet and we stopped waiting
+var COWORK_END_DEADLINE = 'deadline';    // the page as a whole took too long
+var COWORK_END_SATISFIED = 'satisfied';  // the caller had seen enough
+
+// The first byte gets its own, generous allowance: the server has to find the
+// session and start replaying before anything arrives, and charging that wait
+// against the short inter-event budget is what used to make a cold start look
+// exactly like a finished log. It ends at the first byte of any kind, not the
+// first event — once the server is talking, even a keepalive, it is alive, and
+// waiting the long budget out on a stream that is merely caught up would make
+// every correct export slow.
+var COWORK_FIRST_BYTE_MS = 15000;
 var COWORK_IDLE_MS = 2000;
 var COWORK_PAGE_TIMEOUT_MS = 60000;
 
-// Count delivered event frames. Comment frames (":keepalive") carry no data:
-// line, so they can't be mistaken for progress and hold the read open.
-function countSseDataLines(body) {
-  return (body.match(/^data:/gm) || []).length;
-}
+// Retries exist for the anomalous empty page, not the ordinary last one, so
+// they are gated below rather than spent on every export.
+var COWORK_EMPTY_PAGE_RETRIES = 3;
+var COWORK_RETRY_BACKOFF_MS = 750;
 
-// Read an event stream that has no end. This endpoint replays the backlog and
-// then stays open to tail live events, so awaiting response.text() would never
-// resolve once the replay runs dry — it has to be read incrementally and
-// abandoned when it goes quiet. A chunk lost to the idle race is harmless: the
-// next page re-requests from the last sequence number actually recorded.
-async function readCoworkStream(response) {
+// The preview read wants only the head of a log, so it gets its own short
+// ceiling. Without one, a session still streaming keeps delivering data lines,
+// progress keeps being made, the idle budget never expires, and the read runs
+// all the way to the page deadline — a minute, per session, behind a filter.
+var COWORK_PREVIEW_TIMEOUT_MS = 8000;
+var COWORK_PREVIEW_MAX_BYTES = 65536;
+
+// Once the opening event is in hand the scheduled question is answered and only
+// the model is outstanding — a bonus, not a requirement. This is how long to
+// keep the connection open for it before settling for what we have.
+var COWORK_PREVIEW_MODEL_GRACE_MS = 400;
+
+// Read one page of an event stream that has no natural end. This endpoint
+// replays the backlog and may then stay open to tail live events, so awaiting
+// response.text() would never resolve — it has to be read incrementally. What
+// matters as much as the body is why the read stopped, since the caller cannot
+// otherwise tell a finished log from an abandoned one.
+async function readCoworkStream(response, stopWhen, pageTimeoutMs) {
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
-  const deadline = Date.now() + COWORK_PAGE_TIMEOUT_MS;
+  const deadline = Date.now() + (pageTimeoutMs || COWORK_PAGE_TIMEOUT_MS);
 
   let body = '';
+  let unterminated = '';
   let delivered = 0;
+  let sawByte = false;
   let lastProgress = Date.now();
+  let endedBy = COWORK_END_IDLE;
 
   try {
     for (;;) {
-      const quietFor = Date.now() - lastProgress;
-      const wait = Math.min(COWORK_IDLE_MS - quietFor, deadline - Date.now());
-      if (wait <= 0) break;
+      // Until the stream says anything at all the budget is the first-byte
+      // allowance; after that, the much shorter gap between events.
+      const budget = sawByte ? COWORK_IDLE_MS : COWORK_FIRST_BYTE_MS;
+      const wait = Math.min(budget - (Date.now() - lastProgress), deadline - Date.now());
+      if (wait <= 0) {
+        endedBy = Date.now() >= deadline ? COWORK_END_DEADLINE : COWORK_END_IDLE;
+        break;
+      }
 
       let timer;
-      const idle = new Promise(resolve => {
+      const quiet = new Promise(resolve => {
         timer = setTimeout(() => resolve(null), wait);
       });
 
-      const chunk = await Promise.race([reader.read(), idle]);
+      const chunk = await Promise.race([reader.read(), quiet]);
       clearTimeout(timer);
 
-      if (!chunk || chunk.done) break;
+      if (!chunk) {
+        endedBy = Date.now() >= deadline ? COWORK_END_DEADLINE : COWORK_END_IDLE;
+        break;
+      }
+      if (chunk.done) {
+        endedBy = COWORK_END_CLOSED;
+        break;
+      }
 
-      body += decoder.decode(chunk.value, { stream: true });
+      const text = decoder.decode(chunk.value, { stream: true });
+      body += text;
 
-      const count = countSseDataLines(body);
-      if (count > delivered) {
-        delivered = count;
+      if (!sawByte) {
+        sawByte = true;
         lastProgress = Date.now();
+      }
+
+      // Count what this chunk added and carry any partial trailing line
+      // forward, rather than rescanning the whole body on every chunk — that
+      // cost grows with the square of the stream and eats the page deadline on
+      // exactly the large sessions that most need their remaining pages.
+      const before = delivered;
+      unterminated += text;
+      const lines = unterminated.split('\n');
+      unterminated = lines.pop();
+      for (const line of lines) {
+        if (line.startsWith('data:')) delivered++;
+      }
+
+      // Comment frames (":keepalive") carry no data: line, so they still can't
+      // masquerade as progress and hold the read open.
+      if (delivered > before) {
+        lastProgress = Date.now();
+
+        // A caller that only needs part of the log says so, rather than
+        // waiting out the idle window for events it will discard.
+        if (stopWhen && stopWhen(body)) {
+          endedBy = COWORK_END_SATISFIED;
+          break;
+        }
       }
     }
   } finally {
     reader.cancel().catch(() => {});
   }
 
-  return body + decoder.decode();
+  return { body: body + decoder.decode(), endedBy };
 }
 
 // One page of a session's event log. The /v1/code endpoints reject an explicit
 // Accept: application/json, so no Accept header is sent.
-async function fetchCoworkPage(sessionId, fromSequenceNum) {
+async function fetchCoworkPage(sessionId, fromSequenceNum, stopWhen, pageTimeoutMs) {
   const url = `https://claude.ai/v1/code/sessions/${sessionId}/events/stream?from_sequence_num=${fromSequenceNum}`;
   const response = await fetch(url, { credentials: 'include' });
 
@@ -157,51 +221,179 @@ async function fetchCoworkPage(sessionId, fromSequenceNum) {
     throw new Error(`Failed to fetch task ${sessionId}: ${response.status}`);
   }
 
-  return coworkEventLog(await readCoworkStream(response));
+  const { body, endedBy } = await readCoworkStream(response, stopWhen, pageTimeoutMs);
+  return { events: coworkEventLog(body), endedBy };
 }
 
-// Read a session in full. One request returns roughly 160KB of events and then
-// closes, which for a task that ran tools is well short of the whole log, so
-// keep replaying forward from the highest sequence number seen. Pages are
-// deduplicated by event id rather than trusted to start where the last one
-// stopped, and the loop gives up if a page adds nothing or fails to advance —
-// so a server that ignored from_sequence_num would return one page, not spin.
+// A fingerprint for one event, used to skip any event already collected.
+//
+// The id fields here are undocumented, so the fallbacks matter: an event with
+// none of them is fingerprinted by where it was — which request delivered it,
+// and its position in that request — rather than by a constant. That is the
+// whole point. Keying every id-less event the same way, as `seq:${undefined}`
+// once did, made them all look like one event: the first was kept and the rest
+// of the log was silently discarded. Position can't collapse that way, and is
+// stable when a page is re-read, so genuine duplicates are still caught.
+//
+// Each form is prefixed so the namespaces can't overlap, and presence is tested
+// rather than truthiness, so an id of 0 or "" isn't mistaken for a missing one.
+function coworkEventKey(event, from, index) {
+  if (event.event_id !== undefined && event.event_id !== null && event.event_id !== '') {
+    return `id:${event.event_id}`;
+  }
+  if (event.uuid !== undefined && event.uuid !== null && event.uuid !== '') {
+    return `uuid:${event.uuid}`;
+  }
+  if (event.sequence_num !== undefined && event.sequence_num !== null) {
+    return `seq:${event.sequence_num}`;
+  }
+  return `pos:${from}:${index}`;
+}
+
+// Read a session in full, and say so honestly when that wasn't possible.
+//
+// The hard part is not the paging, it is knowing when to stop. Silence is not
+// evidence: a server that hasn't started replaying yet and a log that has run
+// out look identical from here, and treating the first as the second is how an
+// export used to come out empty while reporting success. So an empty page is
+// only accepted as the end when the server closed the stream itself — and when
+// this endpoint never closes a page at all, which it is entitled to do since it
+// tails live events, that is worked out from its own observed behaviour rather
+// than assumed either way.
 async function fetchCoworkSession(sessionId) {
   const events = [];
   const seen = new Set();
   let from = 0;
+  let pages = 0;
+  let sawClose = false;
+  let complete = false;
+  let reason = null;
 
-  for (let page = 0; page < COWORK_MAX_PAGES; page++) {
-    const batch = await fetchCoworkPage(sessionId, from);
+  while (pages < COWORK_MAX_PAGES) {
+    let batch = null;
+
+    for (let attempt = 0; attempt <= COWORK_EMPTY_PAGE_RETRIES; attempt++) {
+      pages++;
+      batch = await fetchCoworkPage(sessionId, from);
+      if (batch.endedBy === COWORK_END_CLOSED) sawClose = true;
+      if (batch.events.length || batch.endedBy === COWORK_END_CLOSED) break;
+
+      // An empty page that never closed is worth asking about again only when
+      // it is genuinely anomalous: either this endpoint has closed pages
+      // before, so silence is out of character, or nothing has arrived at all
+      // and there is no export to lose by trying once more. On an endpoint
+      // that only ever tails, the last page is always an empty one — retrying
+      // that would put seconds of dead waiting into every correct export.
+      const worthRetrying = sawClose || !events.length;
+      if (!worthRetrying || attempt === COWORK_EMPTY_PAGE_RETRIES) break;
+
+      await new Promise(resolve => setTimeout(resolve, COWORK_RETRY_BACKOFF_MS * (attempt + 1)));
+    }
+
     let added = 0;
     let highest = from;
 
-    for (const event of batch) {
-      const key = event.event_id || event.uuid || `seq:${event.sequence_num}`;
-      if (seen.has(key)) continue;
+    batch.events.forEach((event, index) => {
+      const key = coworkEventKey(event, from, index);
+      if (seen.has(key)) return;
       seen.add(key);
       events.push(event);
       added++;
       highest = Math.max(highest, Number(event.sequence_num || 0));
+    });
+
+    console.log(`Cowork page ${pages}: from ${from}, +${added} events (${events.length} total, ended by ${batch.endedBy})`);
+
+    if (!added) {
+      if (batch.endedBy === COWORK_END_CLOSED) {
+        // The server ended the page with nothing beyond what we hold.
+        complete = true;
+      } else if (batch.endedBy === COWORK_END_IDLE && !sawClose) {
+        // This endpoint has never once closed a page for us, so going quiet is
+        // the only end-of-log signal it gives, and repeated silence is what
+        // that looks like. Accepting it here is what keeps a correct export
+        // from carrying a warning every single time.
+        complete = true;
+      } else {
+        reason = `the event stream went quiet with more of the log still expected (${batch.endedBy})`;
+      }
+      break;
     }
 
-    console.log(`Cowork page ${page + 1}: from ${from}, +${added} events (${events.length} total)`);
+    if (highest <= from) {
+      // Events arrived but the sequence number never advanced, so asking again
+      // would fetch the same place forever.
+      reason = 'the event stream stopped advancing its sequence numbers';
+      break;
+    }
 
-    if (!added || highest <= from) break;
     from = highest;
   }
 
+  if (!complete && !reason) {
+    reason = `the log was still going after ${pages} pages`;
+  }
+
+  // An empty read is never written out. A file naming the session, dated
+  // 1970-01-01 and holding no transcript, is worse than a failure: it looks
+  // like a real export of an empty session.
+  if (!events.length) {
+    throw new Error(
+      `No events came back for ${sessionId}${reason ? ` — ${reason}` : ''}. Nothing was written. ` +
+      `Try again, or open the session in Claude.ai to confirm it still exists.`);
+  }
+
   events.sort((a, b) => Number(a.sequence_num || 0) - Number(b.sequence_num || 0));
-  return summariseCoworkSession(sessionId, events);
+  return summariseCoworkSession(sessionId, events, { complete, truncatedReason: reason });
 }
 
-// Whether a run was fired by a schedule is recorded only on the session's first
-// event, so this reads one page instead of replaying the whole log — enough to
-// tell a task from a session someone started by hand.
-async function fetchCoworkScheduledFlag(sessionId) {
-  const events = await fetchCoworkPage(sessionId, 0);
+// The two things about a session that the list endpoint doesn't tell us, and
+// that both sit at the very start of its log: whether a schedule fired it,
+// recorded on the first user event, and which model answered, recorded on the
+// first assistant event. Reading them together costs the same one request as
+// reading either alone.
+//
+// The read stops as soon as both have arrived rather than buffering a whole
+// page and waiting out the idle window — this runs once per session behind the
+// browse page's filters, where that wait was the whole of the delay.
+async function fetchCoworkPreview(sessionId) {
+  const eventModel = event => event.payload && event.payload.message && event.payload.message.model;
+
+  let openingSeenAt = 0;
+
+  const { events } = await fetchCoworkPage(sessionId, 0, body => {
+    // Probing re-parses the body it is handed, so cap how much of one is ever
+    // probed regardless of what arrives.
+    if (body.length > COWORK_PREVIEW_MAX_BYTES) return true;
+
+    const log = coworkEventLog(body);
+    if (!log.some(event => event.event_type === 'user')) return false;
+    if (!openingSeenAt) openingSeenAt = Date.now();
+
+    // The model sits on the first assistant message where it is recorded at
+    // all, so that event settles it either way.
+    if (log.some(event => event.event_type === 'assistant' || eventModel(event))) return true;
+
+    // Otherwise the scheduled answer is already in hand. A session that keeps
+    // streaming would hold this open indefinitely waiting for a model it may
+    // never record, so give up on the bonus and take what we have.
+    return Date.now() - openingSeenAt > COWORK_PREVIEW_MODEL_GRACE_MS;
+  }, COWORK_PREVIEW_TIMEOUT_MS);
+
   const kickoff = events.find(event => event.event_type === 'user');
-  return Boolean(kickoff && kickoff.payload && kickoff.payload.inbound_origin === 'trigger_fire');
+  const answered = events.find(eventModel);
+
+  // No opening event means the question wasn't answered, which is not the same
+  // as answering "no". Reporting false here would let the scheduled filter hide
+  // a session on the strength of a read that failed.
+  if (!kickoff) {
+    throw new Error(`Could not read the start of session ${sessionId}`);
+  }
+
+  return {
+    scheduled: kickoff.payload && kickoff.payload.inbound_origin === 'trigger_fire',
+    model: (answered && eventModel(answered)) || ''
+  };
 }
 
 // The session-list endpoint requires an API version header and rejects the
@@ -209,12 +401,39 @@ async function fetchCoworkScheduledFlag(sessionId) {
 // Both are cookie-authenticated, so no API key is involved either way.
 var ANTHROPIC_VERSION = '2023-06-01';
 
-// List Cowork sessions. Errors carry the API's own explanation, which is worth
-// surfacing because this endpoint's parameters are undocumented.
-async function fetchCoworkList() {
-  const url = 'https://claude.ai/v1/code/sessions?tags=cowork-remote&limit=100&include_trigger_sessions=true';
+// The list is fetched in pages. A ceiling on how many, so an endpoint that
+// ignores the paging parameters can't loop: it would return the same rows,
+// which are deduplicated by id and so add nothing, ending the loop anyway.
+var COWORK_LIST_PAGE_SIZE = 100;
+var COWORK_LIST_MAX_PAGES = 10;
 
-  const response = await fetch(url, {
+// Only sessions tagged cowork-remote are listed. That is the tag the web app's
+// own sessions carry; anything Cowork stores under another tag would not appear
+// here, which is worth knowing but not worth guessing about — the parameters on
+// this endpoint are undocumented, and widening the query blind could return an
+// unrelated set rather than more of the right one.
+function coworkListUrl({ cursor, offset }) {
+  const params = new URLSearchParams({
+    tags: 'cowork-remote',
+    limit: String(COWORK_LIST_PAGE_SIZE),
+    include_trigger_sessions: 'true'
+  });
+  if (cursor) params.set('cursor', cursor);
+  else if (offset) params.set('offset', String(offset));
+  return `https://claude.ai/v1/code/sessions?${params}`;
+}
+
+// A continuation token, under whichever of several plausible names this
+// endpoint uses. Absent from every response shape means cursor paging isn't
+// offered, and the caller falls back to an offset.
+function coworkListCursor(payload) {
+  if (!payload || Array.isArray(payload)) return null;
+  return payload.next_cursor || payload.next_page_token || payload.cursor ||
+    (payload.pagination && (payload.pagination.next_cursor || payload.pagination.next)) || null;
+}
+
+async function fetchCoworkListPage(options) {
+  const response = await fetch(coworkListUrl(options), {
     credentials: 'include',
     headers: { 'anthropic-version': ANTHROPIC_VERSION }
   });
@@ -225,14 +444,61 @@ async function fetchCoworkList() {
   }
 
   const payload = await response.json();
-  const rows = normalizeCoworkList(payload);
+  return { payload, rows: normalizeCoworkList(payload) };
+}
 
-  // This response's field names aren't documented; log one raw row so a wrong
-  // guess in normalizeCoworkList is visible rather than silently blank.
-  const sample = Array.isArray(payload) ? payload[0] : payload && (payload.data || payload.sessions || payload.results || [])[0];
-  console.log('Cowork list: %d sessions, first raw row:', rows.length, sample);
+// List Cowork sessions, following the list past its page size rather than
+// stopping at the first hundred and saying nothing. Errors carry the API's own
+// explanation, which is worth surfacing because this endpoint's parameters are
+// undocumented — as is `truncated`, which says the listing may be short so the
+// browse page can admit that rather than presenting it as everything.
+async function fetchCoworkList() {
+  const rows = [];
+  const seen = new Set();
+  let cursor = null;
+  let offset = 0;
+  let truncated = false;
+  let sample = null;
 
-  return rows;
+  for (let page = 0; page < COWORK_LIST_MAX_PAGES; page++) {
+    const { payload, rows: batch } = await fetchCoworkListPage({ cursor, offset });
+
+    if (!sample) {
+      // This response's field names aren't documented; keep one raw row so a
+      // wrong guess in normalizeCoworkList is visible rather than silently blank.
+      sample = Array.isArray(payload)
+        ? payload[0]
+        : payload && (payload.data || payload.sessions || payload.results || [])[0];
+    }
+
+    let added = 0;
+    for (const row of batch) {
+      if (seen.has(row.id)) continue;
+      seen.add(row.id);
+      rows.push(row);
+      added++;
+    }
+
+    console.log(`Cowork list page ${page + 1}: ${batch.length} rows, +${added} new (${rows.length} total)`);
+
+    cursor = coworkListCursor(payload);
+    if (cursor) continue;
+
+    // No continuation token. A short page is the end of the list; a full one
+    // means there may be more, so try an offset — an endpoint that ignores it
+    // returns the same rows, which add nothing and end the loop here.
+    if (!added || batch.length < COWORK_LIST_PAGE_SIZE) break;
+
+    offset += COWORK_LIST_PAGE_SIZE;
+
+    if (page === COWORK_LIST_MAX_PAGES - 1) {
+      truncated = true;
+    }
+  }
+
+  console.log('Cowork list: %d sessions%s, first raw row:', rows.length, truncated ? ' (truncated)' : '', sample);
+
+  return { rows, truncated };
 }
 
 // The session list is read for its ids; titles and timestamps here are only

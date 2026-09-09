@@ -27,14 +27,25 @@ function saveBlob(blob, filename) {
 // Reserve a filename inside one destination. A name already taken would
 // silently replace the earlier file in a ZIP, and scheduled tasks collide by
 // design — every run of a routine shares its title, so runs on the same day
-// produce the same dated slug. Suffix instead, and return the name used.
-function claimFilename(taken, filename) {
-  const name = sanitizeFilename(filename);
-  if (!taken.has(name)) {
-    taken.add(name);
-    return name;
+// produce the same dated slug.
+//
+// The preferred name is always tried first, so nothing changes for a file whose
+// name is free. Only on a collision does this fall through to the alternatives
+// the renderer supplied, which distinguish the file by when it ran and then by
+// its id; the ordinal at the end exists so this always terminates, not because
+// it tells anyone anything.
+function claimFilename(taken, filename, alternatives) {
+  const candidates = [filename, ...(alternatives || [])];
+
+  for (const candidate of candidates) {
+    const name = sanitizeFilename(candidate);
+    if (name && !taken.has(name)) {
+      taken.add(name);
+      return name;
+    }
   }
 
+  const name = sanitizeFilename(filename);
   const dot = name.lastIndexOf('.');
   const stem = dot > 0 ? name.slice(0, dot) : name;
   const extension = dot > 0 ? name.slice(dot) : '';
@@ -80,7 +91,7 @@ function zipDestination({ archiveName, onProgress } = {}) {
     },
 
     async put(file) {
-      const filename = claimFilename(taken, file.filename);
+      const filename = claimFilename(taken, file.filename, file.alternatives);
       zip.file(filename, file.content);
       return filename;
     },

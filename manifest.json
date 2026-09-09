@@ -1,8 +1,8 @@
 {
     "manifest_version": 3,
     "name": "Claude Interaction Exporter",
-    "version": "1.6.0",
-    "version_name": "1.6.0 — 2026-09-09 (single delivery seam, one filename convention, collision-safe ZIP entries)",
+    "version": "1.7.0",
+    "version_name": "1.7.0 — 2026-09-09 (incomplete Cowork reads are labelled, tool activity and searches always kept, model source recorded)",
     "description": "Export your Claude.ai conversations and scheduled tasks with full message history and frontgraph YAML frontmatter (the frontmatter is the graph)",
       "permissions": [
     "activeTab",

@@ -11,6 +11,9 @@
 function exportOptionsFrom(request) {
   return {
     includeMetadata: request.includeMetadata,
+    includeToolActivity: request.includeToolActivity,
+    includeImages: request.includeImages,
+    includeThinking: request.includeThinking,
     project: request.project,
     contributor: request.contributor,
     tags: request.tags
@@ -49,7 +52,7 @@ function handleExportMessage(request, sender, sendResponse) {
 
     fetchConversationDetail(request.orgId, request.conversationId)
       .then(async data => {
-        data.model = inferModel(data);
+        applyModel(data);
 
         const file = renderConversationExport(data, request.format, exportOptionsFrom(request));
         const filename = await deliverOne(downloadDestination(), file);
@@ -79,7 +82,7 @@ function handleExportMessage(request, sender, sendResponse) {
           noun: 'conversations',
           renderItem: async (item) => {
             const data = await fetchConversationDetail(request.orgId, item.id);
-            data.model = inferModel(data);
+            applyModel(data);
             return renderConversationExport(data, request.format, opts);
           },
           destination: zipDestination({ archiveName: `claude-conversations-${todayStamp()}.zip` }),
@@ -115,7 +118,15 @@ function handleExportMessage(request, sender, sendResponse) {
         const filename = await deliverOne(downloadDestination(), file);
 
         console.log('Downloaded', filename);
-        sendResponse({ success: true });
+        // A partial read still produces a file, clearly labelled inside — but
+        // saying nothing here would leave the label as the only warning, and
+        // the file is the thing least likely to be reread.
+        sendResponse({
+          success: true,
+          warnings: session.complete === false
+            ? `Exported, but the transcript stops early: ${session.truncated_reason}.`
+            : undefined
+        });
       })
       .catch(error => {
         console.error('Export task error:', error);

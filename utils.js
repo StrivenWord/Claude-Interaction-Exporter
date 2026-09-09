@@ -77,6 +77,16 @@ var DEFAULT_MODEL_TIMELINE = [
   { date: new Date('2026-02-17'), model: 'claude-sonnet-4-6' }
 ];
 
+// Settle a conversation's model and record where it came from. The API returns
+// null for anything that used the default model of its day, so the value below
+// is sometimes a dated guess — and an export that writes a guess exactly like a
+// reported value is asserting something it does not know.
+function applyModel(conversation) {
+  conversation.model_source = conversation.model ? 'reported' : 'inferred';
+  conversation.model = inferModel(conversation);
+  return conversation;
+}
+
 // Infer the model for conversations with a null model, based on creation date.
 function inferModel(conversation) {
   if (conversation.model) {
@@ -165,15 +175,16 @@ function normalizeTags(input) {
 }
 
 // Obsidian's own frontmatter shape: a block sequence under the key. Sanitized
-// tags only hold letters, digits, _, - and /, so the only ones needing quotes
-// are those a YAML parser would read as a number, date or boolean.
-function yamlTagList(tags) {
-  if (!tags.length) {
-    return 'tags: []';
+// tags and model ids only hold letters, digits, _, - and /, so the only items
+// needing quotes are those a YAML parser would read as a number, date or
+// boolean.
+function yamlList(key, items) {
+  if (!items.length) {
+    return `${key}: []`;
   }
   const ambiguous = /^([\d-]+|true|false|yes|no|on|off|null)$/i;
-  const items = tags.map(tag => `  - ${ambiguous.test(tag) ? yamlScalar(tag) : tag}`);
-  return ['tags:', ...items].join('\n');
+  const lines = items.map(item => `  - ${ambiguous.test(item) ? yamlScalar(item) : item}`);
+  return [`${key}:`, ...lines].join('\n');
 }
 
 // JSON exports carry the same tags the markdown frontmatter would, as an array.
@@ -187,18 +198,18 @@ function withExportTags(data, tags) {
 // the same export never changes after being written, only future exports do.
 // var, not const: this file is injected twice (see the file header), and a
 // duplicate top-level const/let would throw on the second injection.
-var FRONTGRAPH_VERSION = 1;
+var FRONTGRAPH_VERSION = 2;
 
 // Emit a frontmatter block from ordered [key, value] pairs. Values arrive
-// pre-formatted — wrap anything user-authored in yamlScalar first. A null
-// value drops the key entirely, so exports of different source types share one
-// shell without carrying each other's empty fields; the 'tags' key takes a
-// tag array and expands into Obsidian's block sequence.
+// pre-formatted — wrap anything user-authored in yamlScalar first. A null value
+// drops the key entirely, so exports of different source types share one shell
+// without carrying each other's empty fields, and an array value expands into
+// Obsidian's block sequence.
 function renderFrontmatter(pairs) {
   const lines = ['---'];
   for (const [key, value] of pairs) {
     if (value === null || value === undefined) continue;
-    lines.push(key === 'tags' ? yamlTagList(value) : `${key}: ${value}`);
+    lines.push(Array.isArray(value) ? yamlList(key, value) : `${key}: ${value}`);
   }
   lines.push('---', '');
   return lines.join('\n');
@@ -207,6 +218,37 @@ function renderFrontmatter(pairs) {
 // Filename convention: [YYYY-MM-DD]-[slug].[ext]
 function buildDatedFilename(createdAt, name, extension) {
   return `${formatDateYYYYMMDD(createdAt)}-${slugify(name)}.${extension}`;
+}
+
+// UTC hour and minute, matching formatDateYYYYMMDD's timezone so a date and a
+// time in one filename can't disagree. Empty when there is no usable timestamp.
+function formatTimeHHMM(isoString) {
+  if (!isoString) return '';
+  const date = new Date(isoString);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toISOString().slice(11, 16).replace(':', '-');
+}
+
+// Names a file may fall back to when its preferred one is already taken inside
+// one destination. The default convention above never changes; these only come
+// into play on a collision, and each distinguishes the file by something real
+// before deliver.js resorts to a bare ordinal — first the time it ran, which is
+// what actually separates two runs of one scheduled routine on one day, then
+// its own id, which cannot repeat.
+function datedFilenameAlternatives(createdAt, name, id, extension) {
+  const date = formatDateYYYYMMDD(createdAt);
+  const slug = slugify(name);
+  const alternatives = [];
+
+  const time = formatTimeHHMM(createdAt);
+  if (time) {
+    alternatives.push(`${date}T${time}-${slug}.${extension}`);
+  }
+  if (id) {
+    alternatives.push(`${date}-${slug}-${slugify(id)}.${extension}`);
+  }
+
+  return alternatives;
 }
 
 // Fields the API supplies are scraped: summary, and project — via
@@ -235,6 +277,7 @@ function buildFrontgraphFrontmatter(data, opts = {}) {
     ['source', 'claude-conversation'],
     ['source-url', yamlScalar(`https://claude.ai/chat/${data.uuid || ''}`)],
     ['model', yamlScalar(data.model || '')],
+    ['model-source', data.model_source || (data.model ? 'reported' : 'inferred')],
     ['session-id', yamlScalar(data.uuid || '')],
     ['summary', yamlScalar(collapseWhitespace(data.summary))]
   ]);
@@ -362,18 +405,21 @@ function renderConversationExport(data, format, opts = {}) {
       return {
         content: convertToMarkdown(data, opts.includeMetadata, opts),
         filename: buildDatedFilename(data.created_at, name, 'md'),
+        alternatives: datedFilenameAlternatives(data.created_at, name, data.uuid, 'md'),
         type: 'text/markdown'
       };
     case 'text':
       return {
         content: convertToText(data, opts.includeMetadata, opts),
         filename: buildDatedFilename(data.created_at, name, 'txt'),
+        alternatives: datedFilenameAlternatives(data.created_at, name, data.uuid, 'txt'),
         type: 'text/plain'
       };
     default:
       return {
         content: JSON.stringify(withExportTags(data, opts.tags), null, 2),
         filename: buildDatedFilename(data.created_at, name, 'json'),
+        alternatives: datedFilenameAlternatives(data.created_at, name, data.uuid, 'json'),
         type: 'application/json'
       };
   }
@@ -385,8 +431,9 @@ function renderConversationExport(data, format, opts = {}) {
 // the reading; everything below turns that log into the same turns/frontmatter
 // shape the conversation exports use.
 
-// Event types that carry sandbox, hook and quota bookkeeping rather than
-// transcript. Anything not listed here is treated as a message-bearing event.
+// Pure bookkeeping: sandbox, hook and quota chatter with no transcript in it
+// at all. These are dropped outright. Everything else is classified by
+// coworkEventRole rather than assumed to be speech.
 var COWORK_LOG_EVENT_TYPES = [
   'env_manager_log',
   'system',
@@ -398,9 +445,33 @@ var COWORK_LOG_EVENT_TYPES = [
 ];
 
 // The scheduler appends its own context to the prompt it fires. That belongs in
-// frontmatter, not in the transcript body.
+// frontmatter, not in the transcript body — but only there: applied to every
+// text block, as it once was, this silently deletes the same markup out of a
+// tool result that merely quoted it, such as a file a task happened to read.
 function stripSystemReminders(text) {
   return String(text ?? '').replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, '').trim();
+}
+
+// A web search's results arrive as their own block type — a list of pages
+// rather than text — so they fall through every text path. They are exactly
+// the provenance a research task is worth keeping, so they are kept as links.
+function coworkSearchResults(content) {
+  if (!Array.isArray(content)) return [];
+
+  return content
+    .filter(result => result && (result.url || result.title))
+    .map(result => ({
+      title: collapseWhitespace(result.title || '') || result.url,
+      url: result.url || ''
+    }));
+}
+
+// An image block carries either a URL or inline base64 data. Only a URL can
+// become a reference; this extension saves text and never downloads files, so
+// inline data is recorded as having been there rather than embedded.
+function coworkImageRef(block) {
+  const source = block.source || {};
+  return { url: source.url || '', media_type: source.media_type || 'image' };
 }
 
 // A tool_result's content is a bare string or a nested block array.
@@ -421,13 +492,18 @@ function coworkBlockText(content) {
 // prose and tool calls together, and tool results come back as user events, so
 // text and tool activity have to stay distinguishable rather than collapsing
 // into one string.
-function coworkParts(payload) {
+function coworkParts(payload, opts = {}) {
   if (!payload) return [];
+
+  // Only the fired prompt carries the scheduler's appended context.
+  const clean = opts.stripReminders
+    ? text => stripSystemReminders(text)
+    : text => String(text ?? '').trim();
 
   const content = (payload.message && payload.message.content) ?? payload.content ?? payload.text;
 
   if (typeof content === 'string') {
-    const text = stripSystemReminders(content);
+    const text = clean(content);
     return text ? [{ kind: 'text', text }] : [];
   }
   if (!Array.isArray(content)) return [];
@@ -436,40 +512,79 @@ function coworkParts(payload) {
 
   for (const block of content) {
     if (typeof block === 'string') {
-      const text = stripSystemReminders(block);
+      const text = clean(block);
       if (text) parts.push({ kind: 'text', text });
       continue;
     }
     if (!block) continue;
 
-    if (block.type === 'tool_use') {
+    if (block.type === 'tool_use' || block.type === 'server_tool_use') {
       parts.push({ kind: 'tool_use', name: block.name || 'tool', input: block.input, id: block.id || '' });
     } else if (block.type === 'tool_result') {
       const text = coworkBlockText(block.content);
       if (text) parts.push({ kind: 'tool_result', text, id: block.tool_use_id || '' });
+    } else if (block.type === 'web_search_tool_result') {
+      const results = coworkSearchResults(block.content);
+      if (results.length) parts.push({ kind: 'search_results', results, id: block.tool_use_id || '' });
+    } else if (block.type === 'thinking' || block.type === 'redacted_thinking') {
+      const text = block.type === 'redacted_thinking' ? '[redacted]' : clean(block.thinking);
+      if (text) parts.push({ kind: 'thinking', text });
+    } else if (block.type === 'image') {
+      parts.push({ kind: 'image', ...coworkImageRef(block) });
     } else if (block.text) {
-      const text = stripSystemReminders(block.text);
+      const text = clean(block.text);
       if (text) parts.push({ kind: 'text', text });
+    } else if (block.type) {
+      // A block shape this build doesn't recognize is carried through rather
+      // than dropped. Every earlier version of this parser silently discarded
+      // whatever it hadn't been taught, which is how thinking blocks, images
+      // and search results went missing; keeping them means a JSON export is a
+      // complete record even of content only a later build can render.
+      parts.push({ kind: 'unknown', type: block.type, block });
     }
   }
 
   return parts;
 }
 
+// Who, if anyone, spoke. An explicit role settles it; failing that, a plain
+// user or assistant event is speech. Anything else is the environment around
+// the conversation and returns null.
+//
+// This is deliberately the opposite way round from the old denylist. Under
+// that, an event type this build had never seen fell through to 'assistant'
+// and was rendered as something Claude said — so a new kind of bookkeeping
+// event would have quietly invented dialogue. Being unsure now produces a
+// labelled environment note instead, which is the safe direction to fail in.
+function coworkEventRole(event) {
+  const role = event.payload && event.payload.message && event.payload.message.role;
+  if (role === 'user' || role === 'assistant') return role;
+  if (event.event_type === 'user') return 'user';
+  if (event.event_type === 'assistant') return 'assistant';
+  return null;
+}
+
+// Turns keep their classification rather than only their role, so every
+// renderer — and anything reading a JSON export later — can separate what was
+// said from what merely happened, without re-deriving it from event types.
 function coworkTurns(events) {
   const turns = [];
+  // The fired prompt is the session's first user event, and the only place the
+  // scheduler's appended context appears.
+  const kickoff = events.find(event => event.event_type === 'user') || null;
 
   for (const event of events) {
     if (COWORK_LOG_EVENT_TYPES.includes(event.event_type)) continue;
 
-    const parts = coworkParts(event.payload);
+    const parts = coworkParts(event.payload, { stripReminders: event === kickoff });
     if (!parts.length) continue;
 
-    const role = (event.payload && event.payload.message && event.payload.message.role) ||
-      (event.event_type === 'user' ? 'user' : 'assistant');
+    const role = coworkEventRole(event);
 
     turns.push({
+      kind: role ? 'message' : 'environment',
       role,
+      event_type: event.event_type || null,
       parts,
       // Joined prose, for the plain-text renderer and for turn-level checks.
       text: parts.filter(part => part.kind === 'text').map(part => part.text).join('\n\n'),
@@ -485,7 +600,7 @@ function coworkTurns(events) {
 // than started by hand, and the appended system reminder names the routine and
 // its trigger. Falling back to the prompt's first line keeps ad-hoc Cowork
 // sessions titled sensibly too.
-function summariseCoworkSession(sessionId, events) {
+function summariseCoworkSession(sessionId, events, opts = {}) {
   const kickoff = events.find(event => event.event_type === 'user') || null;
   const payload = (kickoff && kickoff.payload) || {};
   const rawPrompt = (payload.message && payload.message.content) || '';
@@ -497,9 +612,17 @@ function summariseCoworkSession(sessionId, events) {
   const prompt = typeof rawPrompt === 'string' ? stripSystemReminders(rawPrompt) : '';
   const turns = coworkTurns(events);
 
-  const firstAssistant = events.find(event => event.event_type === 'assistant');
-  const model = (firstAssistant && firstAssistant.payload && firstAssistant.payload.message &&
-    firstAssistant.payload.message.model) || '';
+  // Every model that answered, in the order they first appear. A long session
+  // can change model part way through — a fallback, or a compaction — and
+  // recording only the first was quietly losing that.
+  const models = [];
+  for (const event of events) {
+    const model = event.payload && event.payload.message && event.payload.message.model;
+    if (model && !models.includes(model)) {
+      models.push(model);
+    }
+  }
+  const model = models[0] || '';
 
   return {
     id: sessionId,
@@ -507,11 +630,17 @@ function summariseCoworkSession(sessionId, events) {
     routine,
     trigger_id: triggerId,
     scheduled: payload.inbound_origin === 'trigger_fire',
+    // Whether the whole log was read. api.js decides this; it travels with the
+    // session so every renderer can say so rather than each one guessing.
+    complete: opts.complete !== false,
+    truncated_reason: opts.truncatedReason || null,
     fire_reason: payload.triggerFireReason || null,
     model,
+    models,
     created_at: (kickoff && kickoff.created_at) || (events[0] && events[0].created_at) || '',
     updated_at: (events[events.length - 1] && events[events.length - 1].created_at) || '',
     tool_calls: turns.reduce((n, turn) => n + turn.parts.filter(part => part.kind === 'tool_use').length, 0),
+    environment_events: turns.filter(turn => turn.kind === 'environment').length,
     prompt,
     turns,
     events
@@ -535,36 +664,82 @@ function buildTaskFrontmatter(session, opts = {}) {
     ['routine', session.routine ? yamlScalar(session.routine) : null],
     ['trigger-id', session.trigger_id ? yamlScalar(session.trigger_id) : null],
     ['scheduled', String(session.scheduled)],
+    ['complete', String(session.complete !== false)],
+    ['truncated-reason', session.complete === false ? yamlScalar(session.truncated_reason || 'unknown') : null],
     ['fire-reason', session.fire_reason ? yamlScalar(session.fire_reason) : null],
     ['model', yamlScalar(session.model || '')],
+    ['models', session.models && session.models.length > 1 ? session.models : null],
     ['session-id', yamlScalar(session.id)]
   ]);
 }
 
-// Tool activity is the provenance of a research task — which searches ran, what
-// they returned, what files were written — so it is rendered rather than
-// dropped, using the same blockquote/details idiom as conversation attachments.
-// Tool inputs go in whole because a file-writing call carries the task's actual
-// output; results are folded into a <details> block because search results run
-// long.
-function renderCoworkToolParts(parts) {
+// Everything in a turn that isn't prose, in the same blockquote and <details>
+// idiom conversation attachments use. Each kind has its own switch because they
+// answer different questions: tool activity is what the task did, searches are
+// where its facts came from, images are what it was shown, and thinking is how
+// it got there. Tool inputs go in whole, because a file-writing call carries
+// the task's actual output; results and thinking fold into <details> because
+// both run long.
+function renderCoworkExtras(parts, opts) {
   let markdown = '';
 
   for (const part of parts) {
-    if (part.kind === 'tool_use') {
+    if (part.kind === 'tool_use' && wantsToolActivity(opts)) {
       const input = JSON.stringify(part.input === undefined ? null : part.input, null, 2);
       markdown += `> **Tool:** ${part.name}\n>\n> \`\`\`json\n> ${input.replace(/\n/g, '\n> ')}\n> \`\`\`\n\n`;
-    } else if (part.kind === 'tool_result') {
+    } else if (part.kind === 'tool_result' && wantsToolActivity(opts)) {
       markdown += `> <details><summary>Tool result${part.id ? ` (${part.id})` : ''}</summary>\n>\n> \`\`\`\n> ${part.text.replace(/\n/g, '\n> ')}\n> \`\`\`\n>\n> </details>\n\n`;
+    } else if (part.kind === 'search_results' && wantsToolActivity(opts)) {
+      const items = part.results
+        .map(result => `> - ${result.url ? `[${result.title}](${result.url})` : result.title}`)
+        .join('\n');
+      markdown += `> **Search results**\n>\n${items}\n\n`;
+    } else if (part.kind === 'image' && wantsImages(opts)) {
+      markdown += part.url
+        ? `![${part.media_type}](${part.url})\n\n`
+        : `> **Image** (${part.media_type}) — referenced here but not saved; this extension exports text, not files.\n\n`;
+    } else if (part.kind === 'unknown' && opts.includeMetadata) {
+      markdown += `> **Unrecognized content block** (\`${part.type}\`) — kept in full in the ` +
+        `JSON export, but this build has no way to render it.\n\n`;
+    } else if (part.kind === 'thinking' && wantsThinking(opts)) {
+      markdown += `> <details><summary>Thinking</summary>\n>\n> ${part.text.replace(/\n/g, '\n> ')}\n>\n> </details>\n\n`;
     }
   }
 
   return markdown;
 }
 
+// Tool activity is the substance of a task, not decoration on it: a run whose
+// whole product was a written file has nothing else to show. So it is on unless
+// asked for otherwise, and never tied to the metadata checkbox.
+function wantsToolActivity(opts) {
+  return opts.includeToolActivity !== false;
+}
+
+// What Claude was shown is part of the record, so image references are written
+// unless asked otherwise. How it reasoned usually isn't what an archive is
+// for — and it is long — so thinking is the one that has to be asked for.
+function wantsImages(opts) {
+  return opts.includeImages !== false;
+}
+
+function wantsThinking(opts) {
+  return opts.includeThinking === true;
+}
+
+// An export that stops early says so where it cannot be missed — in the body as
+// well as the frontmatter, since the body is what gets read.
+function incompleteNotice(session) {
+  if (session.complete !== false) return '';
+  return `> **Incomplete export.** This transcript stops early because ` +
+    `${session.truncated_reason || 'the event log could not be read to its end'}. ` +
+    `Exporting again may produce a fuller one.\n\n`;
+}
+
 function convertTaskToMarkdown(session, includeMetadata, opts = {}) {
   let markdown = buildTaskFrontmatter(session, opts);
   markdown += `# ${session.title}\n\n`;
+  markdown += incompleteNotice(session);
 
   if (includeMetadata) {
     if (session.routine) {
@@ -579,6 +754,9 @@ function convertTaskToMarkdown(session, includeMetadata, opts = {}) {
     }
     markdown += `**Events:** ${session.events.length}\n`;
     markdown += `**Tool calls:** ${session.tool_calls}\n`;
+    if (session.environment_events) {
+      markdown += `**Environment events:** ${session.environment_events}\n`;
+    }
     markdown += '\n---\n\n';
   }
 
@@ -593,6 +771,15 @@ function convertTaskToMarkdown(session, includeMetadata, opts = {}) {
   let exchange = '';
 
   for (const turn of session.turns) {
+    // Not speech: recorded as what it is, and only when metadata is asked for.
+    if (turn.kind === 'environment') {
+      if (includeMetadata) {
+        exchange += `> **Environment event** (${turn.event_type || 'unknown type'})\n>\n> ` +
+          `${turn.text.replace(/\n/g, '\n> ')}\n\n`;
+      }
+      continue;
+    }
+
     if (turn.text) {
       if (exchange) {
         markdown += `${exchange}---\n\n`;
@@ -603,9 +790,10 @@ function convertTaskToMarkdown(session, includeMetadata, opts = {}) {
       }
     }
 
-    if (includeMetadata) {
-      exchange += renderCoworkToolParts(turn.parts.filter(part => part.kind !== 'text'));
-    }
+    // includeMetadata arrives as its own argument, so fold it in rather than
+    // trusting opts to carry the same answer.
+    exchange += renderCoworkExtras(turn.parts.filter(part => part.kind !== 'text'),
+      { ...opts, includeMetadata });
   }
 
   if (exchange) {
@@ -615,8 +803,62 @@ function convertTaskToMarkdown(session, includeMetadata, opts = {}) {
   return markdown;
 }
 
+// Indent a block so it reads as belonging to the turn above it.
+function indentLines(text, prefix) {
+  return String(text ?? '').replace(/^/gm, prefix);
+}
+
+// Plain text for a session. A speaker label appears only where someone actually
+// spoke, so a turn that was nothing but a tool call no longer renders as an
+// empty line with a name on it — which is why these turns used to be dropped.
+function formatCoworkPlainTurns(turns, opts) {
+  const blocks = [];
+  let humanSeen = false;
+  let assistantSeen = false;
+
+  for (const turn of turns) {
+    if (turn.kind === 'environment') continue;
+
+    if (turn.text) {
+      let label;
+      if (turn.role === 'user') {
+        label = humanSeen ? 'H' : 'Human';
+        humanSeen = true;
+      } else {
+        label = assistantSeen ? 'A' : 'Assistant';
+        assistantSeen = true;
+      }
+      blocks.push(`${label}: ${turn.text}`);
+    }
+
+    for (const part of turn.parts) {
+      if (part.kind === 'tool_use' && wantsToolActivity(opts)) {
+        const input = JSON.stringify(part.input === undefined ? null : part.input, null, 2);
+        blocks.push(`[tool: ${part.name}]\n${indentLines(input, '  ')}`);
+      } else if (part.kind === 'tool_result' && wantsToolActivity(opts)) {
+        blocks.push(`[tool result${part.id ? `: ${part.id}` : ''}]\n${indentLines(part.text, '  ')}`);
+      } else if (part.kind === 'search_results' && wantsToolActivity(opts)) {
+        const items = part.results
+          .map(result => `- ${result.title}${result.url ? ` — ${result.url}` : ''}`)
+          .join('\n');
+        blocks.push(`[search results]\n${indentLines(items, '  ')}`);
+      } else if (part.kind === 'image' && wantsImages(opts)) {
+        blocks.push(`[image: ${part.url || `${part.media_type}, not saved`}]`);
+      } else if (part.kind === 'thinking' && wantsThinking(opts)) {
+        blocks.push(`[thinking]\n${indentLines(part.text, '  ')}`);
+      }
+    }
+  }
+
+  return blocks.join('\n\n').trim();
+}
+
 function convertTaskToText(session, includeMetadata, opts = {}) {
   let text = '';
+
+  if (session.complete === false) {
+    text += `[Incomplete export: ${session.truncated_reason || 'the event log could not be read to its end'}]\n\n`;
+  }
 
   if (includeMetadata) {
     const tags = normalizeTags(opts.tags);
@@ -634,9 +876,48 @@ function convertTaskToText(session, includeMetadata, opts = {}) {
     text += '\n---\n\n';
   }
 
-  // Plain text carries prose only; turns that were nothing but tool activity
-  // would render as an empty speaker line.
-  return text + formatPlainTurns(session.turns.filter(turn => turn.text));
+  return text + formatCoworkPlainTurns(session.turns, opts);
+}
+
+// What a task's JSON export contains.
+//
+// The session object holds the raw event log and the transcript derived from
+// it, which meant the same content was serialized twice and the file came out
+// roughly double the size it needed to be. Only the derived form is written
+// now: `turns` keeps every content block, including ones this build cannot
+// render, so nothing is lost by leaving the log out — while the log's own
+// field names are undocumented and have already moved once, which makes them
+// the worse thing to archive. `turns[].text` is dropped too, being a
+// convenience join of the text parts rather than anything new.
+//
+// This is a deliberate output-schema choice; frontgraph-version records it.
+function taskExportJson(session, tags) {
+  return {
+    id: session.id,
+    title: session.title,
+    routine: session.routine,
+    trigger_id: session.trigger_id,
+    scheduled: session.scheduled,
+    fire_reason: session.fire_reason,
+    model: session.model,
+    models: session.models,
+    created_at: session.created_at,
+    updated_at: session.updated_at,
+    complete: session.complete !== false,
+    truncated_reason: session.truncated_reason || null,
+    event_count: session.events ? session.events.length : 0,
+    tool_calls: session.tool_calls,
+    environment_events: session.environment_events,
+    prompt: session.prompt,
+    tags: normalizeTags(tags),
+    turns: (session.turns || []).map(turn => ({
+      kind: turn.kind,
+      role: turn.role,
+      event_type: turn.event_type,
+      created_at: turn.created_at,
+      parts: turn.parts
+    }))
+  };
 }
 
 // The task counterpart to renderConversationExport.
@@ -646,18 +927,21 @@ function renderTaskExport(session, format, opts = {}) {
       return {
         content: convertTaskToMarkdown(session, opts.includeMetadata, opts),
         filename: buildDatedFilename(session.created_at, session.title, 'md'),
+        alternatives: datedFilenameAlternatives(session.created_at, session.title, session.id, 'md'),
         type: 'text/markdown'
       };
     case 'text':
       return {
         content: convertTaskToText(session, opts.includeMetadata, opts),
         filename: buildDatedFilename(session.created_at, session.title, 'txt'),
+        alternatives: datedFilenameAlternatives(session.created_at, session.title, session.id, 'txt'),
         type: 'text/plain'
       };
     default:
       return {
-        content: JSON.stringify(withExportTags(session, opts.tags), null, 2),
+        content: JSON.stringify(taskExportJson(session, opts.tags), null, 2),
         filename: buildDatedFilename(session.created_at, session.title, 'json'),
+        alternatives: datedFilenameAlternatives(session.created_at, session.title, session.id, 'json'),
         type: 'application/json'
       };
   }

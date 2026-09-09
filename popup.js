@@ -119,6 +119,9 @@ document.getElementById('exportCurrent').addEventListener('click', async () => {
     const common = {
       format: document.getElementById('format').value,
       includeMetadata: document.getElementById('includeMetadata').checked,
+      includeToolActivity: document.getElementById('includeToolActivity').checked,
+      includeImages: document.getElementById('includeImages').checked,
+      includeThinking: document.getElementById('includeThinking').checked,
       project: document.getElementById('project').value.trim(),
       contributor: document.getElementById('contributor').value.trim(),
       tags: document.getElementById('tags').value.trim()
@@ -137,7 +140,11 @@ document.getElementById('exportCurrent').addEventListener('click', async () => {
     }
 
     if (response?.success) {
-      showStatus(`${kind === 'task' ? 'Task' : 'Conversation'} exported successfully!`, 'success');
+      if (response.warnings) {
+        showStatus(response.warnings, 'info');
+      } else {
+        showStatus(`${kind === 'task' ? 'Task' : 'Conversation'} exported successfully!`, 'success');
+      }
     } else {
       const errorMsg = response?.error || 'Export failed';
       console.error('Export failed:', errorMsg, response?.details);
@@ -175,6 +182,9 @@ document.getElementById('exportCurrent').addEventListener('click', async () => {
       orgId,
       format: document.getElementById('format').value,
       includeMetadata: document.getElementById('includeMetadata').checked,
+      includeToolActivity: document.getElementById('includeToolActivity').checked,
+      includeImages: document.getElementById('includeImages').checked,
+      includeThinking: document.getElementById('includeThinking').checked,
       project: document.getElementById('project').value.trim(),
       contributor: document.getElementById('contributor').value.trim(),
       tags: document.getElementById('tags').value.trim()

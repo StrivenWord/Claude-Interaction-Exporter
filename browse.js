@@ -8,9 +8,14 @@ let currentSort = 'updated_desc';
 // Selected interaction IDs (conversations use uuid, tasks use id)
 let selectedIds = new Set();
 
-// Session id to whether a schedule fired it, filled in as sessions are checked.
+// Session id to whether a schedule fired it, and to the model that answered.
+// Both come from one preview read per session, filled in on demand.
 let taskSchedules = new Map();
+let taskModels = new Map();
 let resolvingSchedules = false;
+
+// Whether the session list stopped short of everything available.
+let tasksTruncated = false;
 
 // Bucket label for interactions not attached to any Claude.ai Project
 const NO_PROJECT = 'No Project';
@@ -101,6 +106,9 @@ function exportOptions() {
   return {
     format: document.getElementById('exportFormat').value,
     includeMetadata: document.getElementById('includeMetadata').checked,
+    includeToolActivity: document.getElementById('includeToolActivity').checked,
+    includeImages: document.getElementById('includeImages').checked,
+    includeThinking: document.getElementById('includeThinking').checked,
     project: document.getElementById('exportProject').value.trim(),
     contributor: document.getElementById('exportContributor').value.trim(),
     tags: document.getElementById('exportTags').value.trim()
@@ -129,10 +137,7 @@ async function loadConversations() {
     console.log(`Loaded ${allConversations.length} conversations`);
     
     // Infer models for conversations with null model
-    allConversations = allConversations.map(conv => ({
-      ...conv,
-      model: inferModel(conv)
-    }));
+    allConversations = allConversations.map(conv => applyModel({ ...conv }));
     
     // Apply initial sort and display
     applyFiltersAndSort();
@@ -144,12 +149,15 @@ async function loadConversations() {
 }
 
 // Load Cowork sessions. These are listed for their ids and rough labels only:
-// whether a session was fired by a schedule, and its real title, come from
-// replaying its event log at export time.
+// a session's real title comes from replaying its event log at export time,
+// and whether a schedule fired it, plus which model answered, from a short
+// preview read (resolveTaskPreviews).
 async function loadTasks() {
   try {
-    allTasks = await fetchCoworkList();
-    console.log(`Loaded ${allTasks.length} Cowork sessions`);
+    const { rows, truncated } = await fetchCoworkList();
+    allTasks = rows;
+    tasksTruncated = truncated;
+    console.log(`Loaded ${allTasks.length} Cowork sessions${truncated ? ' (list truncated)' : ''}`);
     applyFiltersAndSort();
   } catch (error) {
     console.error('Error loading tasks:', error);
@@ -157,9 +165,15 @@ async function loadTasks() {
   }
 }
 
-// Whether a session was fired by a schedule: true, false, or null when it
-// hasn't been determined yet. The list response doesn't carry it unless it
-// happens to include a trigger, so it is resolved per session and remembered.
+// Whether a session was fired by a schedule: true, false, UNKNOWN_SCHEDULE when
+// it was checked and the check failed, or null when it hasn't been checked yet.
+// The list response doesn't carry it unless it happens to include a trigger, so
+// it is resolved per session and remembered.
+//
+// A failed check is remembered as deliberately as a successful one. Storing
+// nothing left it looking un-checked, so every toggle of the filter retried
+// every session that had already failed — which was the only part of this that
+// wasn't actually free the second time.
 function taskScheduledState(task) {
   if (taskSchedules.has(task.id)) {
     return taskSchedules.get(task.id);
@@ -167,10 +181,17 @@ function taskScheduledState(task) {
   return task.trigger_id ? true : null;
 }
 
-// Reading one page of a session says whether a schedule fired it. Done on
-// demand rather than at load, since it costs a request per session. Results
-// accumulate, so toggling the filter again is free.
-async function resolveTaskSchedules() {
+// A session whose origin could not be read. Distinct from null, which means
+// nobody has looked yet.
+const UNKNOWN_SCHEDULE = 'unknown';
+
+// Reading a session's first user event says whether a schedule fired it. Done
+// on demand rather than at load, since it costs a request per session — but
+// only the first event is read, and the connection is dropped as soon as it
+// arrives, so this is one short round trip each rather than a buffered page.
+// Every answer is remembered, failures included, so toggling the filter again
+// really is free.
+async function resolveTaskPreviews() {
   if (resolvingSchedules) return;
 
   const pending = allTasks.filter(task => taskScheduledState(task) === null);
@@ -179,6 +200,7 @@ async function resolveTaskSchedules() {
   resolvingSchedules = true;
   const batchSize = 3;
   let checked = 0;
+  let failed = 0;
 
   try {
     for (let i = 0; i < pending.length; i += batchSize) {
@@ -186,9 +208,13 @@ async function resolveTaskSchedules() {
 
       await Promise.all(batch.map(async (task) => {
         try {
-          taskSchedules.set(task.id, await fetchCoworkScheduledFlag(task.id));
+          const preview = await fetchCoworkPreview(task.id);
+          taskSchedules.set(task.id, preview.scheduled);
+          if (preview.model) taskModels.set(task.id, preview.model);
         } catch (error) {
           console.error(`Could not determine whether ${task.id} was scheduled:`, error);
+          taskSchedules.set(task.id, UNKNOWN_SCHEDULE);
+          failed++;
         }
       }));
 
@@ -203,11 +229,54 @@ async function resolveTaskSchedules() {
     resolvingSchedules = false;
     applyFiltersAndSort();
   }
+
+  // Sessions whose origin is unknown stay listed rather than being hidden, so
+  // say why the list may hold more than the filter asked for.
+  if (failed) {
+    showToast(`Couldn't read ${failed} of ${pending.length} sessions. They are still listed.`, true);
+  }
+}
+
+// Derive a readable name from a model id the map above has never heard of, so
+// a model released after this build still reads as a name rather than an id.
+// Handles both id orders Anthropic has used: claude-opus-4-5-20251101 and the
+// older claude-3-7-sonnet-20250219.
+function deriveModelName(model) {
+  const titled = word => `${word[0].toUpperCase()}${word.slice(1)}`;
+
+  // claude-opus-4-5-20251101, claude-sonnet-4-6, claude-fable-5. The minor
+  // version is held to one or two digits and has to be the last dash-separated
+  // number, so the trailing date stamp on claude-opus-5-20260401 is not read
+  // as one — which would name that model "Opus 5.20260401".
+  const current = /^claude-(opus|sonnet|haiku|fable)-(\d+)(?:-(\d{1,2})(?=-|$))?/.exec(model);
+  if (current) {
+    const [, family, major, minor] = current;
+    return `Claude ${titled(family)} ${minor ? `${major}.${minor}` : major}`;
+  }
+
+  // The older order, where the version came first: claude-3-7-sonnet-20250219.
+  // The family name anchors the end here, so a date stamp can't be captured.
+  const legacy = /^claude-(\d+)(?:-(\d+))?-(opus|sonnet|haiku)/.exec(model);
+  if (legacy) {
+    const [, major, minor, family] = legacy;
+    return `Claude ${minor ? `${major}.${minor}` : major} ${titled(family)}`;
+  }
+
+  return model;
 }
 
 // Format model name for display
 function formatModelName(model) {
-  return MODEL_DISPLAY_NAMES[model] || model;
+  return MODEL_DISPLAY_NAMES[model] || deriveModelName(model);
+}
+
+// A Cowork session the list endpoint returned no timestamps for would render
+// "Invalid Date" in both date columns. Sorting already handles the missing
+// case, in compareMissing; this is the display half of the same thing.
+function formatTableDate(isoString) {
+  if (!isoString) return '—';
+  const date = new Date(isoString);
+  return Number.isNaN(date.getTime()) ? '—' : date.toLocaleDateString();
 }
 
 // Projects the Project filter can usefully offer under the current Type and
@@ -230,11 +299,19 @@ function availableProjects(typeFilter, scheduledOnly) {
 }
 
 // Models the Model filter can usefully offer under the current Type selection.
-// Cowork sessions carry no model, so viewing them alone leaves nothing to
-// choose between.
+// A Cowork session's model isn't in the list response, so it appears here only
+// once a preview read has found it.
 function availableModels(typeFilter) {
-  if (typeFilter === 'cowork') return [];
-  return [...new Set(allConversations.map(conv => conv.model))].filter(m => m).sort();
+  const names = new Set();
+
+  if (typeFilter !== 'cowork') {
+    allConversations.forEach(conv => conv.model && names.add(conv.model));
+  }
+  if (typeFilter !== 'chat') {
+    taskModels.forEach(model => model && names.add(model));
+  }
+
+  return [...names].sort();
 }
 
 // Rebuild a filter dropdown for the values currently available. A chosen value
@@ -318,8 +395,8 @@ function applyFiltersAndSort() {
       task.title.toLowerCase().includes(searchTerm);
 
     const matchesProject = !projectFilter || getProjectName(task) === projectFilter;
-    // Sessions carry no model, so any model choice rules them out.
-    const matchesModel = !modelFilter;
+    // A session matches a model choice only once its model is known.
+    const matchesModel = !modelFilter || taskModels.get(task.id) === modelFilter;
     const matchesType = !typeFilter || typeFilter === 'cowork';
     const matchesScheduled = !scheduledOnlyChecked || taskScheduledState(task) !== false;
 
@@ -438,8 +515,8 @@ function emptyResultsMessage() {
 
   // Only chats have a model, so asking for a model while viewing sessions can
   // never match — say so rather than listing it as one criterion among several.
-  if (model && typeFilter === 'cowork') {
-    return escapeHtml(`Cowork sessions aren't associated with a model, so none can match ${formatModelName(model)}. Clear the Model filter above to see them.`);
+  if (model && typeFilter === 'cowork' && !taskModels.size) {
+    return escapeHtml(`No Cowork session's model has been read yet, so none can match ${formatModelName(model)}. Clear the Model filter above to see them.`);
   }
 
   let subject = typeFilter === 'cowork' ? 'Cowork sessions'
@@ -491,8 +568,8 @@ function displayInteractions() {
   `;
 
   filteredInteractions.forEach(interaction => {
-    const updatedDate = new Date(interaction.updated_at).toLocaleDateString();
-    const createdDate = new Date(interaction.created_at).toLocaleDateString();
+    const updatedDate = formatTableDate(interaction.updated_at);
+    const createdDate = formatTableDate(interaction.created_at);
     const checked = selectedIds.has(interaction.id) ? 'checked' : '';
     const safeName = escapeHtml(interaction.name);
 
@@ -532,8 +609,14 @@ function displayInteractions() {
         </tr>
       `;
     } else {
-      const state = taskScheduledState(interaction._original);
+      const model = taskModels.get(interaction.id) || '';
       const status = escapeHtml(interaction._original.status || 'Unknown');
+      const cell = model
+        ? `<span class="model-badge ${getModelBadgeClass(model)}">${escapeHtml(formatModelName(model))}</span>`
+        : status;
+      const cellTitle = model
+        ? 'Model, from the first assistant event in the session'
+        : 'Status, from the session list. The model is read when the filters need it, or on export.';
 
       html += `
         <tr data-id="${interaction.id}" data-type="cowork">
@@ -548,7 +631,7 @@ function displayInteractions() {
           <td><span class="type-badge cowork">Cowork</span></td>
           <td class="date">${updatedDate}</td>
           <td class="date">${createdDate}</td>
-          <td title="${state === null ? 'Not yet determined' : 'From the session\'s first event'}">${status}</td>
+          <td title="${cellTitle}">${cell}</td>
           <td>${interaction.project ? escapeHtml(interaction.project) : '—'}</td>
           <td>
             <div class="actions">
@@ -655,6 +738,7 @@ function updateStats() {
   const totalInteractions = allConversations.length + allTasks.length;
   let text = `Showing ${filteredInteractions.length} of ${totalInteractions} interactions`;
   if (selectedIds.size > 0) text += ` — ${selectedIds.size} selected`;
+  if (tasksTruncated) text += ' — the Cowork session list stopped at its page limit, so there may be more';
   stats.textContent = text;
 }
 
@@ -671,7 +755,7 @@ async function exportConversation(conversationId, conversationName) {
     const data = await fetchConversationDetail(orgId, conversationId);
 
     // Infer model if null
-    data.model = inferModel(data);
+    applyModel(data);
 
     await deliverOne(downloadDestination(), renderConversationExport(data, opts.format, opts));
     showToast(`Exported: ${conversationName}`);
@@ -692,7 +776,11 @@ async function exportTask(sessionId, sessionTitle) {
     const session = await fetchCoworkSession(sessionId);
     await deliverOne(downloadDestination(), renderTaskExport(session, opts.format, opts));
 
-    showToast(`Exported: ${session.title}`);
+    if (session.complete === false) {
+      showToast(`Exported ${session.title}, but the transcript stops early: ${session.truncated_reason}.`, true);
+    } else {
+      showToast(`Exported: ${session.title}`);
+    }
 
   } catch (error) {
     console.error('Export error:', error);
@@ -746,7 +834,7 @@ async function renderInteractionFile(item) {
 
   if (item.type === 'chat') {
     const data = await fetchConversationDetail(orgId, item.uuid);
-    data.model = inferModel(data);
+    applyModel(data);
     return renderConversationExport(data, opts.format, opts);
   }
 
@@ -875,12 +963,20 @@ function setupEventListeners() {
   document.getElementById('scheduledOnlyCheckbox').addEventListener('change', async () => {
     applyFiltersAndSort();
     if (document.getElementById('scheduledOnlyCheckbox').checked) {
-      await resolveTaskSchedules();
+      await resolveTaskPreviews();
     }
   });
 
-  // Model filter
-  document.getElementById('modelFilter').addEventListener('change', applyFiltersAndSort);
+  // Model filter. Choosing a model while sessions are in view needs their
+  // models, which the list response doesn't carry, so read them on demand for
+  // the same reason the scheduled filter does.
+  document.getElementById('modelFilter').addEventListener('change', async () => {
+    applyFiltersAndSort();
+    if (document.getElementById('modelFilter').value &&
+        document.getElementById('typeFilter').value !== 'chat') {
+      await resolveTaskPreviews();
+    }
+  });
 
   // Project filter
   document.getElementById('projectFilter').addEventListener('change', applyFiltersAndSort);
