@@ -1,16 +1,46 @@
-// Note: Organization ID is now stored in extension settings
-// Users need to configure it in the extension options page
+// Runs on claude.ai and does the work the popup asks for: read an interaction,
+// render it, hand it to a destination. The reading lives in api.js, the
+// rendering in utils.js, and the delivery in deliver.js — this file only wires
+// a message to the right three of them.
 //
-// Like utils.js, this file is injected twice — by the manifest and again by
+// Like utils.js this file is injected twice — by the manifest and again by
 // background.js — so it must stay free of top-level const/let and register its
 // message listener only once. See the guard at the bottom of the file.
-//
-// inferModel, the Cowork parsers and every format renderer live in utils.js,
-// which the manifest loads as a content script ahead of both this file and api.js.
 
-// Every endpoint this file reads lives in api.js, which the manifest loads
-// ahead of it: conversations under the org-scoped /api tree, Cowork sessions
-// under /v1/code.
+// The export UI's shared fields, in the shape every renderer expects.
+function exportOptionsFrom(request) {
+  return {
+    includeMetadata: request.includeMetadata,
+    project: request.project,
+    contributor: request.contributor,
+    tags: request.tags
+  };
+}
+
+// JSZip is 95KB and only a batch export needs it, so the manifest deliberately
+// keeps it out of every claude.ai page load and the service worker injects it
+// into this tab the first time a batch runs.
+function ensureZipSupport() {
+  if (typeof JSZip !== 'undefined') {
+    return Promise.resolve();
+  }
+
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage({ action: 'ensureZipSupport' }, (response) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+      } else if (!response || !response.success) {
+        reject(new Error((response && response.error) || 'Could not load ZIP support.'));
+      } else {
+        resolve();
+      }
+    });
+  });
+}
+
+function todayStamp() {
+  return new Date().toISOString().split('T')[0];
+}
 
 // Handle messages from popup
 function handleExportMessage(request, sender, sendResponse) {
@@ -18,44 +48,18 @@ function handleExportMessage(request, sender, sendResponse) {
     console.log('Export conversation request received:', request);
 
     fetchConversationDetail(request.orgId, request.conversationId)
-      .then(data => {
-        console.log('Conversation data fetched successfully:', data);
-
-        // Infer model if null
+      .then(async data => {
         data.model = inferModel(data);
 
-        let content, filename, type;
+        const file = renderConversationExport(data, request.format, exportOptionsFrom(request));
+        const filename = await deliverOne(downloadDestination(), file);
 
-        const exportOpts = { project: request.project, contributor: request.contributor, tags: request.tags };
-
-        switch (request.format) {
-          case 'markdown':
-            content = convertToMarkdown(data, request.includeMetadata, exportOpts);
-            filename = buildFrontgraphFilename(data);
-            type = 'text/markdown';
-            break;
-          case 'text':
-            content = convertToText(data, request.includeMetadata, exportOpts);
-            filename = `claude-conversation-${data.name || request.conversationId}.txt`;
-            type = 'text/plain';
-            break;
-          default:
-            content = JSON.stringify(withExportTags(data, request.tags), null, 2);
-            filename = `claude-conversation-${data.name || request.conversationId}.json`;
-            type = 'application/json';
-        }
-
-        console.log('Downloading file:', filename);
-        downloadFile(content, filename, type);
+        console.log('Downloaded', filename);
         sendResponse({ success: true });
       })
       .catch(error => {
         console.error('Export conversation error:', error);
-        sendResponse({
-          success: false,
-          error: error.message,
-          details: error.stack
-        });
+        sendResponse({ success: false, error: error.message, details: error.stack });
       });
 
     return true;
@@ -64,73 +68,37 @@ function handleExportMessage(request, sender, sendResponse) {
   if (request.action === 'exportAllConversations') {
     console.log('Export all conversations request received:', request);
 
-    fetchConversationList(request.orgId)
-      .then(async conversations => {
+    Promise.all([fetchConversationList(request.orgId), ensureZipSupport()])
+      .then(async ([conversations]) => {
         console.log(`Fetched ${conversations.length} conversations`);
 
-        if (request.format === 'json') {
-          // For JSON, export as a single file with all conversations
-          const filename = `claude-all-conversations-${new Date().toISOString().split('T')[0]}.json`;
-          const tagged = conversations.map(conv => withExportTags(conv, request.tags));
-          console.log('Downloading all conversations as JSON:', filename);
-          downloadFile(JSON.stringify(tagged, null, 2), filename);
-          sendResponse({ success: true, count: conversations.length });
-        } else {
-          // For other formats, create individual files
-          let count = 0;
-          let errors = [];
+        const opts = exportOptionsFrom(request);
 
-          for (const conv of conversations) {
-            try {
-              console.log(`Fetching full conversation ${count + 1}/${conversations.length}: ${conv.uuid}`);
-              const fullConv = await fetchConversationDetail(request.orgId, conv.uuid);
-
-              // Infer model if null
-              fullConv.model = inferModel(fullConv);
-
-              let content, filename, type;
-              const exportOpts = { project: request.project, contributor: request.contributor, tags: request.tags };
-
-              if (request.format === 'markdown') {
-                content = convertToMarkdown(fullConv, request.includeMetadata, exportOpts);
-                filename = buildFrontgraphFilename(fullConv);
-                type = 'text/markdown';
-              } else {
-                content = convertToText(fullConv, request.includeMetadata, exportOpts);
-                filename = `claude-${conv.name || conv.uuid}.txt`;
-                type = 'text/plain';
-              }
-
-              downloadFile(content, filename, type);
-              count++;
-
-              // Add a small delay to avoid overwhelming the API
-              await new Promise(resolve => setTimeout(resolve, 500));
-            } catch (error) {
-              console.error(`Failed to export conversation ${conv.uuid}:`, error);
-              errors.push(`${conv.name || conv.uuid}: ${error.message}`);
-            }
+        const result = await runBatch({
+          items: conversations.map(conv => ({ id: conv.uuid, name: conv.name })),
+          noun: 'conversations',
+          renderItem: async (item) => {
+            const data = await fetchConversationDetail(request.orgId, item.id);
+            data.model = inferModel(data);
+            return renderConversationExport(data, request.format, opts);
+          },
+          destination: zipDestination({ archiveName: `claude-conversations-${todayStamp()}.zip` }),
+          summary: {
+            format: request.format,
+            include_metadata: request.includeMetadata,
+            tags: normalizeTags(request.tags)
           }
+        });
 
-          if (errors.length > 0) {
-            console.warn('Some conversations failed to export:', errors);
-            sendResponse({
-              success: true,
-              count,
-              warnings: `Exported ${count}/${conversations.length} conversations. Some failed: ${errors.join('; ')}`
-            });
-          } else {
-            sendResponse({ success: true, count });
-          }
-        }
+        sendResponse({
+          success: true,
+          count: result.completed,
+          warnings: result.failed > 0 ? describeBatch(result, 'conversations') : undefined
+        });
       })
       .catch(error => {
         console.error('Export all conversations error:', error);
-        sendResponse({
-          success: false,
-          error: error.message,
-          details: error.stack
-        });
+        sendResponse({ success: false, error: error.message, details: error.stack });
       });
 
     return true;
@@ -140,87 +108,18 @@ function handleExportMessage(request, sender, sendResponse) {
     console.log('Export task request received:', request);
 
     fetchCoworkSession(request.sessionId)
-      .then(session => {
+      .then(async session => {
         console.log(`Task log replayed: ${session.events.length} events, ${session.turns.length} turns`);
 
-        const { content, filename, type } = renderTaskExport(session, request.format, {
-          includeMetadata: request.includeMetadata,
-          project: request.project,
-          contributor: request.contributor,
-          tags: request.tags
-        });
+        const file = renderTaskExport(session, request.format, exportOptionsFrom(request));
+        const filename = await deliverOne(downloadDestination(), file);
 
-        console.log('Downloading file:', filename);
-        downloadFile(content, filename, type);
+        console.log('Downloaded', filename);
         sendResponse({ success: true });
       })
       .catch(error => {
         console.error('Export task error:', error);
-        sendResponse({
-          success: false,
-          error: error.message,
-          details: error.stack
-        });
-      });
-
-    return true;
-  }
-
-  if (request.action === 'exportAllTasks') {
-    console.log('Export all tasks request received:', request);
-
-    fetchCoworkList()
-      .then(async rows => {
-        console.log(`Fetched ${rows.length} Cowork sessions`);
-
-        let count = 0;
-        const errors = [];
-
-        for (const row of rows) {
-          try {
-            const session = await fetchCoworkSession(row.id);
-
-            // Only scheduled runs are tasks; the same list carries sessions
-            // started by hand, which the conversation exports don't cover but
-            // aren't what this action was asked for.
-            if (request.scheduledOnly && !session.scheduled) continue;
-
-            const { content, filename, type } = renderTaskExport(session, request.format, {
-              includeMetadata: request.includeMetadata,
-              project: request.project,
-              contributor: request.contributor,
-              tags: request.tags
-            });
-
-            downloadFile(content, filename, type);
-            count++;
-
-            // Add a small delay to avoid overwhelming the API
-            await new Promise(resolve => setTimeout(resolve, 500));
-          } catch (error) {
-            console.error(`Failed to export task ${row.id}:`, error);
-            errors.push(`${row.title || row.id}: ${error.message}`);
-          }
-        }
-
-        if (errors.length > 0) {
-          console.warn('Some tasks failed to export:', errors);
-          sendResponse({
-            success: true,
-            count,
-            warnings: `Exported ${count}/${rows.length} tasks. Some failed: ${errors.join('; ')}`
-          });
-        } else {
-          sendResponse({ success: true, count });
-        }
-      })
-      .catch(error => {
-        console.error('Export all tasks error:', error);
-        sendResponse({
-          success: false,
-          error: error.message,
-          details: error.stack
-        });
+        sendResponse({ success: false, error: error.message, details: error.stack });
       });
 
     return true;

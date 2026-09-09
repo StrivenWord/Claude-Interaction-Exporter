@@ -463,6 +463,9 @@ function displayInteractions() {
 
   if (filteredInteractions.length === 0) {
     tableContent.innerHTML = `<div class="no-results">${emptyResultsMessage()}</div>`;
+    // Both export buttons act on the filtered list, so neither has anything to do.
+    document.getElementById('exportAllBtn').disabled = true;
+    document.getElementById('exportSelectedBtn').disabled = true;
     return;
   }
 
@@ -656,7 +659,8 @@ function updateStats() {
   stats.textContent = text;
 }
 
-// Reading a conversation or a Cowork session is api.js's job.
+// Reading a conversation or a Cowork session is api.js's job; rendering one to
+// a file is utils.js's, and saving it deliver.js's.
 
 // Export single conversation
 async function exportConversation(conversationId, conversationName) {
@@ -670,25 +674,7 @@ async function exportConversation(conversationId, conversationName) {
     // Infer model if null
     data.model = inferModel(data);
 
-    let content, filename, type;
-    switch (opts.format) {
-      case 'markdown':
-        content = convertToMarkdown(data, opts.includeMetadata, opts);
-        filename = buildFrontgraphFilename(data);
-        type = 'text/markdown';
-        break;
-      case 'text':
-        content = convertToText(data, opts.includeMetadata, opts);
-        filename = `claude-${conversationName || conversationId}.txt`;
-        type = 'text/plain';
-        break;
-      default:
-        content = JSON.stringify(withExportTags(data, opts.tags), null, 2);
-        filename = `claude-${conversationName || conversationId}.json`;
-        type = 'application/json';
-    }
-
-    downloadFile(content, filename, type);
+    await deliverOne(downloadDestination(), renderConversationExport(data, opts.format, opts));
     showToast(`Exported: ${conversationName}`);
 
   } catch (error) {
@@ -705,9 +691,8 @@ async function exportTask(sessionId, sessionTitle) {
     showToast(`Exporting ${sessionTitle}...`);
 
     const session = await fetchCoworkSession(sessionId);
-    const { content, filename, type } = renderTaskExport(session, opts.format, opts);
+    await deliverOne(downloadDestination(), renderTaskExport(session, opts.format, opts));
 
-    downloadFile(content, filename, type);
     showToast(`Exported: ${session.title}`);
 
   } catch (error) {
@@ -756,168 +741,73 @@ async function exportSelected() {
   });
 }
 
-// Render a single interaction (conversation or task) to a file
+// One interaction row to one file, in whichever format the header selects.
 async function renderInteractionFile(item) {
-  if (item.type === 'chat') {
-    return renderConversationFile({
-      uuid: item.uuid,
-      name: item.name
-    });
-  } else {
-    const session = await fetchCoworkSession(item.id);
-    const opts = exportOptions();
-    return renderTaskExport(session, opts.format, opts);
-  }
-}
-
-// One conversation row to one file, in whichever format the header selects.
-async function renderConversationFile(conv) {
-  const data = await fetchConversationDetail(orgId, conv.uuid);
-
-  // Infer model if null
-  data.model = inferModel(data);
-
   const opts = exportOptions();
-  const safeName = sanitizeFilename(conv.name);
 
-  switch (opts.format) {
-    case 'markdown':
-      return {
-        content: convertToMarkdown(data, opts.includeMetadata, opts),
-        filename: buildFrontgraphFilename(data)
-      };
-    case 'text':
-      return {
-        content: convertToText(data, opts.includeMetadata, opts),
-        filename: `${safeName}.txt`
-      };
-    default:
-      return {
-        content: JSON.stringify(withExportTags(data, opts.tags), null, 2),
-        filename: `${safeName}.json`
-      };
+  if (item.type === 'chat') {
+    const data = await fetchConversationDetail(orgId, item.uuid);
+    data.model = inferModel(data);
+    return renderConversationExport(data, opts.format, opts);
   }
+
+  const session = await fetchCoworkSession(item.id);
+  return renderTaskExport(session, opts.format, opts);
 }
 
-// Shared batch-export flow: renders each item to a file, zips, downloads.
-// Callers differ only in renderItem, which returns {filename, content} or null
-// to leave an item out of the archive.
-async function exportBatch({ items, buttonId, defaultLabel, noun, folder = '', renderItem }) {
+// Batch export with this page's progress dialog around it. runBatch in
+// deliver.js owns the rendering loop and the archive; everything here is the
+// dialog, the cancel button, and the button being pressed.
+async function exportBatch({ items, buttonId, defaultLabel, noun, renderItem }) {
   const button = document.getElementById(buttonId);
   button.disabled = true;
   button.textContent = 'Preparing...';
 
-  // Show progress modal
   const progressModal = document.getElementById('progressModal');
   const progressBar = document.getElementById('progressBar');
   const progressText = document.getElementById('progressText');
   const progressStats = document.getElementById('progressStats');
   progressModal.style.display = 'block';
+  progressBar.style.width = '0%';
+  progressStats.textContent = '';
+  progressText.textContent = `Exporting ${items.length} ${noun}...`;
 
   let cancelExport = false;
-  const cancelButton = document.getElementById('cancelExport');
-  cancelButton.onclick = () => {
+  document.getElementById('cancelExport').onclick = () => {
     cancelExport = true;
     progressText.textContent = 'Cancelling...';
   };
 
+  const opts = exportOptions();
+
   try {
-    // Create a new ZIP file
-    const zip = new JSZip();
-    const total = items.length;
-    let completed = 0;
-    let skipped = 0;
-    let failed = 0;
-    const failedItems = [];
-
-    progressText.textContent = `Exporting ${total} ${noun}...`;
-
-    // Process items in batches to avoid overwhelming the API
-    const batchSize = 3; // Process 3 at a time
-    for (let i = 0; i < total; i += batchSize) {
-      if (cancelExport) break;
-
-      const batch = items.slice(i, Math.min(i + batchSize, total));
-      await Promise.all(batch.map(async (item) => {
-        const label = item.name || item.title || item.uuid || item.id;
-        try {
-          const file = await renderItem(item);
-          if (!file) {
-            skipped++;
-            return;
-          }
-          zip.file(folder + sanitizeFilename(file.filename), file.content);
-          completed++;
-        } catch (error) {
-          console.error(`Failed to export ${label}:`, error);
-          failed++;
-          failedItems.push(label);
+    const result = await runBatch({
+      items,
+      renderItem,
+      noun,
+      destination: zipDestination({
+        archiveName: `claude-${noun}-${new Date().toISOString().split('T')[0]}.zip`,
+        onProgress: percent => { progressBar.style.width = `${percent}%`; }
+      }),
+      summary: {
+        format: opts.format,
+        include_metadata: opts.includeMetadata,
+        tags: normalizeTags(opts.tags)
+      },
+      shouldCancel: () => cancelExport,
+      onProgress: ({ phase, percent, completed, failed, total }) => {
+        if (phase === 'archiving') {
+          progressText.textContent = 'Creating ZIP file...';
+          progressBar.style.width = '0%';
+          return;
         }
-      }));
-
-      // Update progress
-      const progress = Math.round((completed + skipped + failed) / total * 100);
-      progressBar.style.width = `${progress}%`;
-      progressStats.textContent = `${completed} succeeded, ${failed} failed out of ${total}`;
-
-      // Small delay between batches
-      if (i + batchSize < total && !cancelExport) {
-        await new Promise(resolve => setTimeout(resolve, 200));
+        progressBar.style.width = `${percent}%`;
+        progressStats.textContent = `${completed} succeeded, ${failed} failed out of ${total}`;
       }
-    }
-
-    if (cancelExport) {
-      progressModal.style.display = 'none';
-      showToast('Export cancelled', true);
-      return;
-    }
-
-    // Add a summary file
-    const opts = exportOptions();
-    const summary = {
-      export_date: new Date().toISOString(),
-      [`total_${noun}`]: total,
-      successful_exports: completed,
-      skipped_exports: skipped,
-      failed_exports: failed,
-      failed_items: failedItems,
-      format: opts.format,
-      include_metadata: opts.includeMetadata,
-      tags: normalizeTags(opts.tags)
-    };
-    zip.file(`${folder}export_summary.json`, JSON.stringify(summary, null, 2));
-
-    // Generate and download the ZIP file
-    progressText.textContent = 'Creating ZIP file...';
-    const blob = await zip.generateAsync({
-      type: 'blob',
-      compression: 'DEFLATE',
-      compressionOptions: {
-        level: 6 // Medium compression
-      }
-    }, (metadata) => {
-      // Update progress during ZIP creation
-      const zipProgress = Math.round(metadata.percent);
-      progressBar.style.width = `${zipProgress}%`;
     });
 
-    // Download the ZIP file
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `claude-${noun}-${new Date().toISOString().split('T')[0]}.zip`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-
     progressModal.style.display = 'none';
-
-    if (failed > 0) {
-      showToast(`Exported ${completed} of ${total} ${noun} (${failed} failed). Check export_summary.json in the ZIP for details.`);
-    } else {
-      showToast(`Successfully exported ${completed} ${noun}!`);
-    }
+    showToast(describeBatch(result, noun), result.cancelled);
 
   } catch (error) {
     console.error('Export error:', error);
@@ -929,9 +819,6 @@ async function exportBatch({ items, buttonId, defaultLabel, noun, folder = '', r
     updateSelectionUI(); // restores the "(N)" suffix on Export Selected, if any remain checked
   }
 }
-
-// Conversion functions are now imported from utils.js
-// Functions available: getCurrentBranch, convertToMarkdown, convertToText, downloadFile
 
 // Show error message
 function showError(message) {

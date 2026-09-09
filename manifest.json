@@ -1,8 +1,8 @@
 {
     "manifest_version": 3,
     "name": "Claude Interaction Exporter",
-    "version": "1.5.4",
-    "version_name": "1.5.4 — 2026-09-03 (hyphenated frontmatter keys, escaped free-text YAML fields, frontgraph-version)",
+    "version": "1.6.0",
+    "version_name": "1.6.0 — 2026-09-09 (single delivery seam, one filename convention, collision-safe ZIP entries)",
     "description": "Export your Claude.ai conversations and scheduled tasks with full message history and frontgraph YAML frontmatter (the frontmatter is the graph)",
       "permissions": [
     "activeTab",
@@ -23,7 +23,7 @@
       "content_scripts": [
     {
       "matches": ["https://claude.ai/*"],
-      "js": ["utils.js", "api.js", "content.js"],
+      "js": ["utils.js", "api.js", "deliver.js", "content.js"],
       "css": ["content.css"]
     }
   ],

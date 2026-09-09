@@ -98,9 +98,12 @@ function slugify(text) {
   return slug || 'untitled';
 }
 
+// Every format's filename is built from this now, not just Markdown's, so a
+// present-but-unparseable created_at falls back rather than throwing and
+// failing the export outright.
 function formatDateYYYYMMDD(isoString) {
-  const d = isoString ? new Date(isoString) : new Date(0);
-  return d.toISOString().slice(0, 10);
+  const date = isoString ? new Date(isoString) : new Date(0);
+  return (Number.isNaN(date.getTime()) ? new Date(0) : date).toISOString().slice(0, 10);
 }
 
 // Quote a scalar for safe YAML embedding. Titles, contributor names, and
@@ -193,10 +196,6 @@ function renderFrontmatter(pairs) {
 // Filename convention: [YYYY-MM-DD]-[slug].[ext]
 function buildDatedFilename(createdAt, name, extension) {
   return `${formatDateYYYYMMDD(createdAt)}-${slugify(name)}.${extension}`;
-}
-
-function buildFrontgraphFilename(data) {
-  return buildDatedFilename(data.created_at, data.name, 'md');
 }
 
 // Fields the API supplies are scraped: summary, and project — via
@@ -338,6 +337,35 @@ function convertToText(data, includeMetadata, opts = {}) {
   }
 
   return text + formatPlainTurns(conversationTurns(data));
+}
+
+// One place decides what a chosen export format produces, so the popup, the
+// single-row export and the batch ZIP can't drift apart on filename or MIME.
+// The task equivalent is renderTaskExport; the two stay deliberately
+// symmetrical, including the [YYYY-MM-DD]-[slug] filename in every format.
+function renderConversationExport(data, format, opts = {}) {
+  const name = data.name || data.uuid;
+
+  switch (format) {
+    case 'markdown':
+      return {
+        content: convertToMarkdown(data, opts.includeMetadata, opts),
+        filename: buildDatedFilename(data.created_at, name, 'md'),
+        type: 'text/markdown'
+      };
+    case 'text':
+      return {
+        content: convertToText(data, opts.includeMetadata, opts),
+        filename: buildDatedFilename(data.created_at, name, 'txt'),
+        type: 'text/plain'
+      };
+    default:
+      return {
+        content: JSON.stringify(withExportTags(data, opts.tags), null, 2),
+        filename: buildDatedFilename(data.created_at, name, 'json'),
+        type: 'application/json'
+      };
+  }
 }
 
 // --- Cowork sessions (scheduled tasks) --------------------------------
@@ -600,8 +628,7 @@ function convertTaskToText(session, includeMetadata, opts = {}) {
   return text + formatPlainTurns(session.turns.filter(turn => turn.text));
 }
 
-// One place decides what a chosen export format produces, so the popup, the
-// single-row export and the batch ZIP can't drift apart on filename or MIME.
+// The task counterpart to renderConversationExport.
 function renderTaskExport(session, format, opts = {}) {
   switch (format) {
     case 'markdown':
@@ -623,19 +650,6 @@ function renderTaskExport(session, format, opts = {}) {
         type: 'application/json'
       };
   }
-}
-
-// Download file utility
-function downloadFile(content, filename, type = 'application/json') {
-  const blob = new Blob([content], { type });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = sanitizeFilename(filename);
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
 }
 
 // Functions are available globally in the browser context

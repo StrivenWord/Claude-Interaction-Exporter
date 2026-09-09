@@ -78,19 +78,19 @@ The extension detects which of the two you are on and exports accordingly.
 
 ### Browse and bulk export
 
-Click the extension icon → **Browse All Conversations**. The browse page lists conversations and Cowork sessions in separate tables, where you can:
+Click the extension icon → **Browse All Conversations**. The browse page lists conversations and Cowork sessions in one table, where you can:
 
 - Search by name, and filter by model or by Claude Project
 - Sort by created or updated date, name, or project
 - Check individual rows and click **Export Selected**
-- Click **Export All** to export every conversation matching your current filters
-- Limit the task table to scheduled runs only
+- Click **Export All** to export every interaction matching your current filters
+- Limit the list to scheduled runs only, when viewing Cowork sessions
 
-**Export All** and **Export Selected** act on the conversation table. The task table has its own **Export All Tasks** button, which exports the sessions it is currently listing.
+**Export All** and **Export Selected** both act on the single table, so a mixed selection of conversations and sessions exports together.
 
-Bulk exports are bundled into a ZIP containing an `export_summary.json` manifest, with task exports under a `tasks/` folder. Conversations are fetched three at a time, with a pause between batches to stay well inside rate limits. A progress dialog tracks the run and can cancel it; anything that fails is listed at the end rather than aborting the batch.
+Bulk exports are bundled into a ZIP containing an `export_summary.json` manifest. Interactions are fetched three at a time, with a pause between batches to stay well inside rate limits. A progress dialog tracks the run and can cancel it; anything that fails is listed at the end rather than aborting the batch.
 
-The popup also has an **Export All Conversations** button, which does not produce a ZIP: in Markdown or plain text it downloads one file per conversation, which will make Chrome ask about multiple downloads, and in JSON it writes a single combined file built from the conversation-list endpoint, so it carries titles and metadata but no message history. For bulk work, and for complete JSON, use the browse page.
+The popup's **Export All Conversations** button produces the same kind of ZIP, using the same engine — it just has no progress dialog, and it always covers every conversation rather than a filtered subset. Use the browse page when you want to choose what goes in.
 
 ## Output
 
@@ -102,7 +102,7 @@ The popup also has an **Export All Conversations** button, which does not produc
 | **Plain text** | `Human:` / `Assistant:` prefixes, shortened to `H:`/`A:` after the first. Current branch only. | Pasting into another tool or a text editor |
 | **JSON** | Complete raw data, including every branch and all metadata. | Archiving, scripts, data analysis |
 
-Markdown files are named `<YYYY-MM-DD>-<slug>.md`. The **Include metadata** checkbox in the popup and on the browse page controls the extra detail inside the file — per-message timestamps, attachment lists, the header block above the transcript, and, in Markdown exports of Cowork sessions, the tool-call and tool-result blocks themselves. YAML frontmatter is always written.
+Every export is named `<YYYY-MM-DD>-<slug>.<ext>`, whichever format it is and whichever button produced it. Inside a ZIP, files that would otherwise share a name are suffixed `-2`, `-3`, and so on — which matters most for scheduled tasks, since every run of one routine carries the same title and so the same date-and-slug. The **Include metadata** checkbox in the popup and on the browse page controls the extra detail inside the file — per-message timestamps, attachment lists, the header block above the transcript, and, in Markdown exports of Cowork sessions, the tool-call and tool-result blocks themselves. YAML frontmatter is always written.
 
 ### Frontmatter
 
@@ -171,7 +171,7 @@ No data ever reaches the developer or any third party: the extension has no back
 ## Limitations
 
 - Markdown and plain text export only the currently selected branch of a multi-branch conversation. Use JSON for all branches.
-- Large bulk exports can take several minutes: the browse page fetches three conversations at a time with a pause between batches, and the popup's Export All fetches them one at a time.
+- Large bulk exports can take several minutes: every bulk path fetches three interactions at a time with a pause between batches.
 - Plain-text exports of Cowork sessions carry the prose only. Tool activity appears in the Markdown and JSON forms.
 - Some special content types, notably artifacts, may not render perfectly in Markdown.
 - Attachment *files* are not downloaded. An attachment appears as a reference line with its name, size, and type; if Claude.ai extracted text from it, that text is included, but the original file is not.
@@ -187,7 +187,7 @@ No data ever reaches the developer or any third party: the extension has no back
 | "Access denied" | The organization ID probably belongs to a different organization than the conversations you are exporting. Recheck `https://claude.ai/api/organizations`. |
 | Nothing happens when you click Export | If the tab was already open when you installed or updated the extension, reload it once. The extension tries to handle this itself, but a reload always fixes it. |
 | Some conversations fail in a batch | The batch continues and lists what failed at the end; the browser console has the specifics. |
-| The download never appeared | Chrome may be blocking multiple automatic downloads. Bulk-export from the browse page instead, which produces a single ZIP. |
+| The download never appeared | Check whether Chrome blocked it, and whether the page's downloads are being sent somewhere unexpected. Bulk exports arrive as a single ZIP, so they should only ever produce one download. |
 
 ## Development
 
@@ -195,10 +195,11 @@ No data ever reaches the developer or any third party: the extension has no back
 Claude-Conversation-Exporter/
 ├── manifest.json        # Extension configuration and permissions
 ├── background.js        # Service worker; injects content scripts into open tabs
-├── content.js           # Runs on claude.ai; orchestrates fetch → render → download
+├── content.js           # Runs on claude.ai; wires a popup message to the three below
 ├── content.css          # Styles for the content script
-├── utils.js             # The transcript model, Cowork parsing, all format renderers
+├── utils.js             # The transcript model, frontmatter, and all format renderers
 ├── api.js               # Every Claude.ai endpoint the extension reads
+├── deliver.js           # Where a rendered file goes: download, or a batched ZIP
 ├── popup.html / .js     # Toolbar popup
 ├── options.html / .js   # Settings page
 ├── browse.html / .js    # Conversation and session browser
