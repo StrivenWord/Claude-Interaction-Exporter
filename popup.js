@@ -34,6 +34,8 @@ function sendToContentScript(tabId, message) {
 
 // Check if org ID is configured on popup load
 document.addEventListener('DOMContentLoaded', async () => {
+  showVersion('versionInfo');
+
   const orgId = await getOrgId();
   if (!orgId) {
     document.getElementById('setupNotice').style.display = 'block';
@@ -50,9 +52,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   chrome.storage.sync.get(['defaultTags'], (result) => {
     document.getElementById('tags').value = result.defaultTags || '';
   });
-
-  const manifest = chrome.runtime.getManifest();
-  document.getElementById('versionInfo').textContent = manifest.version_name || `v${manifest.version}`;
 });
 
 // Handle options link click

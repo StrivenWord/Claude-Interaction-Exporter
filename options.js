@@ -1,5 +1,7 @@
 // Load saved settings
 document.addEventListener('DOMContentLoaded', () => {
+  showVersion('versionInfo');
+
   chrome.storage.sync.get(['organizationId'], (result) => {
     if (result.organizationId) {
       document.getElementById('orgId').value = result.organizationId;
@@ -76,7 +78,7 @@ document.getElementById('testBtn').addEventListener('click', async () => {
   }
   
   showStatus('testStatus', 'Testing connection...', 'success');
-  
+
   try {
     const conversations = await fetchConversationList(orgId);
     showStatus('testStatus', `Success! Found ${conversations.length} conversations.`, 'success');

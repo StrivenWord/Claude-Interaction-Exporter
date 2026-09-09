@@ -18,6 +18,17 @@ function escapeHtml(str) {
     .replace(/'/g, '&#39;');
 }
 
+// The loaded build's version_name, so which one is running can be confirmed at
+// a glance after a reload. Shown by the popup, the options page and the browse
+// page, and set before anything those pages fetch, so a slow or failing request
+// can't be what hides it.
+function showVersion(elementId) {
+  const element = document.getElementById(elementId);
+  if (!element) return;
+  const manifest = chrome.runtime.getManifest();
+  element.textContent = manifest.version_name || `v${manifest.version}`;
+}
+
 // Strip characters that are invalid in filenames on Windows or would create
 // unintended directories inside an export ZIP.
 function sanitizeFilename(name) {

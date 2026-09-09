@@ -45,6 +45,8 @@ const MODEL_DISPLAY_NAMES = {
 
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', async () => {
+  showVersion('versionInfo');
+
   await loadOrgId();
   await loadDefaultProject();
   await loadDefaultContributor();
@@ -52,9 +54,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadConversations();
   await loadTasks();
   setupEventListeners();
-
-  const manifest = chrome.runtime.getManifest();
-  document.getElementById('versionInfo').textContent = manifest.version_name || `v${manifest.version}`;
 });
 
 // Load the default frontgraph project key from storage and persist edits
