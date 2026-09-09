@@ -78,25 +78,16 @@ document.getElementById('testBtn').addEventListener('click', async () => {
   showStatus('testStatus', 'Testing connection...', 'success');
   
   try {
-    const response = await fetch(`https://claude.ai/api/organizations/${orgId}/chat_conversations`, {
-      credentials: 'include',
-      headers: {
-        'Accept': 'application/json',
-      }
-    });
-    
-    if (response.ok) {
-      const data = await response.json();
-      showStatus('testStatus', `Success! Found ${data.length} conversations.`, 'success');
-    } else if (response.status === 401) {
+    const conversations = await fetchConversationList(orgId);
+    showStatus('testStatus', `Success! Found ${conversations.length} conversations.`, 'success');
+  } catch (error) {
+    if (error.status === 401) {
       showStatus('testStatus', 'Not authenticated. Please make sure you are logged into Claude.ai', 'error');
-    } else if (response.status === 403) {
+    } else if (error.status === 403) {
       showStatus('testStatus', 'Access denied. The Organization ID might be incorrect.', 'error');
     } else {
-      showStatus('testStatus', `Connection failed with status: ${response.status}`, 'error');
+      showStatus('testStatus', `Connection error: ${error.message}`, 'error');
     }
-  } catch (error) {
-    showStatus('testStatus', `Connection error: ${error.message}`, 'error');
   }
 });
 

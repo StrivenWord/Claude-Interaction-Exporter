@@ -126,18 +126,7 @@ async function loadConversations() {
   if (!orgId) return;
   
   try {
-    const response = await fetch(`https://claude.ai/api/organizations/${orgId}/chat_conversations`, {
-      credentials: 'include',
-      headers: {
-        'Accept': 'application/json',
-      }
-    });
-    
-    if (!response.ok) {
-      throw new Error(`Failed to load conversations: ${response.status}`);
-    }
-    
-    allConversations = await response.json();
+    allConversations = await fetchConversationList(orgId);
     console.log(`Loaded ${allConversations.length} conversations`);
     
     // Infer models for conversations with null model
@@ -667,27 +656,7 @@ function updateStats() {
   stats.textContent = text;
 }
 
-// Fetch one conversation's full message tree.
-async function fetchConversationDetail(conversationId) {
-  const response = await fetch(
-    `https://claude.ai/api/organizations/${orgId}/chat_conversations/${conversationId}?tree=True&rendering_mode=messages&render_all_tools=true`,
-    {
-      credentials: 'include',
-      headers: {
-        'Accept': 'application/json',
-      }
-    }
-  );
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch conversation: ${response.status}`);
-  }
-
-  return await response.json();
-}
-
-// Reading one Cowork session takes several paged requests; fetchCoworkSession
-// in utils.js owns that loop.
+// Reading a conversation or a Cowork session is api.js's job.
 
 // Export single conversation
 async function exportConversation(conversationId, conversationName) {
@@ -696,7 +665,7 @@ async function exportConversation(conversationId, conversationName) {
   try {
     showToast(`Exporting ${conversationName}...`);
 
-    const data = await fetchConversationDetail(conversationId);
+    const data = await fetchConversationDetail(orgId, conversationId);
 
     // Infer model if null
     data.model = inferModel(data);
@@ -803,7 +772,7 @@ async function renderInteractionFile(item) {
 
 // One conversation row to one file, in whichever format the header selects.
 async function renderConversationFile(conv) {
-  const data = await fetchConversationDetail(conv.uuid);
+  const data = await fetchConversationDetail(orgId, conv.uuid);
 
   // Infer model if null
   data.model = inferModel(data);

@@ -197,7 +197,8 @@ Claude-Conversation-Exporter/
 ├── background.js        # Service worker; injects content scripts into open tabs
 ├── content.js           # Runs on claude.ai; orchestrates fetch → render → download
 ├── content.css          # Styles for the content script
-├── utils.js             # Shared: API fetches, Cowork parsing, all format renderers
+├── utils.js             # The transcript model, Cowork parsing, all format renderers
+├── api.js               # Every Claude.ai endpoint the extension reads
 ├── popup.html / .js     # Toolbar popup
 ├── options.html / .js   # Settings page
 ├── browse.html / .js    # Conversation and session browser

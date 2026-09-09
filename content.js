@@ -6,54 +6,18 @@
 // message listener only once. See the guard at the bottom of the file.
 //
 // inferModel, the Cowork parsers and every format renderer live in utils.js,
-// which the manifest loads as a content script ahead of this file.
+// which the manifest loads as a content script ahead of both this file and api.js.
 
-// Fetch conversation data
-async function fetchConversation(orgId, conversationId) {
-  const url = `https://claude.ai/api/organizations/${orgId}/chat_conversations/${conversationId}?tree=True&rendering_mode=messages&render_all_tools=true`;
-
-  const response = await fetch(url, {
-    credentials: 'include',
-    headers: {
-      'Accept': 'application/json',
-    }
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch conversation: ${response.status}`);
-  }
-
-  return await response.json();
-}
-
-// Fetch all conversations
-async function fetchAllConversations(orgId) {
-  const url = `https://claude.ai/api/organizations/${orgId}/chat_conversations`;
-
-  const response = await fetch(url, {
-    credentials: 'include',
-    headers: {
-      'Accept': 'application/json',
-    }
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch conversations: ${response.status}`);
-  }
-
-  return await response.json();
-}
-
-// Cowork endpoints live under /v1/code rather than the org-scoped /api tree.
-// Listing sessions and replaying one are both owned by utils.js —
-// fetchCoworkList and fetchCoworkSession — since the browse page needs them too.
+// Every endpoint this file reads lives in api.js, which the manifest loads
+// ahead of it: conversations under the org-scoped /api tree, Cowork sessions
+// under /v1/code.
 
 // Handle messages from popup
 function handleExportMessage(request, sender, sendResponse) {
   if (request.action === 'exportConversation') {
     console.log('Export conversation request received:', request);
 
-    fetchConversation(request.orgId, request.conversationId)
+    fetchConversationDetail(request.orgId, request.conversationId)
       .then(data => {
         console.log('Conversation data fetched successfully:', data);
 
@@ -100,7 +64,7 @@ function handleExportMessage(request, sender, sendResponse) {
   if (request.action === 'exportAllConversations') {
     console.log('Export all conversations request received:', request);
 
-    fetchAllConversations(request.orgId)
+    fetchConversationList(request.orgId)
       .then(async conversations => {
         console.log(`Fetched ${conversations.length} conversations`);
 
@@ -119,7 +83,7 @@ function handleExportMessage(request, sender, sendResponse) {
           for (const conv of conversations) {
             try {
               console.log(`Fetching full conversation ${count + 1}/${conversations.length}: ${conv.uuid}`);
-              const fullConv = await fetchConversation(request.orgId, conv.uuid);
+              const fullConv = await fetchConversationDetail(request.orgId, conv.uuid);
 
               // Infer model if null
               fullConv.model = inferModel(fullConv);
