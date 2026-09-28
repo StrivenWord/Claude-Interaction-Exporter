@@ -762,6 +762,15 @@ function renderConversationBody(data, opts, artifacts) {
   return { html: parts.filter(Boolean).join('\n\n'), contents, exchanges: exchange };
 }
 
+// A conversation can be real and hold nothing — created and abandoned, or a
+// session whose log was all bookkeeping. Rendering a masthead over blank space
+// leaves the reader unsure whether the export failed.
+var EMPTY_NOTICE = `<section class="panel">
+    <p class="label">Nothing to show</p>
+    <p>This conversation has no messages. The export succeeded; there was
+    nothing in it to write down.</p>
+  </section>`;
+
 function contentsList(contents) {
   if (contents.length < 2) return '';
   const items = contents
@@ -881,15 +890,18 @@ function convertToHtml(data, opts = {}) {
   const artifacts = replayArtifacts(data);
   const conversation = renderConversationBody(data, opts, artifacts);
 
+  const empty = !conversation.html.trim();
+
   const body = [
     `<header class="masthead">
     <h1>${escapeHtml(meta.title)}</h1>
     <p class="byline"><span>${escapeHtml(formatStamp(meta.created))}</span>${meta.model ? `<span class="model">${escapeHtml(meta.model)}</span>` : ''}</p>
   </header>`,
+    empty ? EMPTY_NOTICE : '',
     showMetadata ? metadataBlock(meta, opts) : '',
     filesSection(artifacts, opts),
     showMetadata ? contentsList(conversation.contents) : '',
-    `<div class="controls">
+    empty ? '' : `<div class="controls">
     <button id="expand-all" type="button">Expand all</button>
     <button id="collapse-all" type="button">Collapse all</button>
   </div>`,
@@ -937,7 +949,7 @@ function coworkPartsHtml(parts, opts) {
       chunks.push(`<details class="tools"><summary>Thinking</summary>${renderBody(part.text)}</details>`);
     } else if (part.kind === 'tool_use' && wantsToolActivity(opts)) {
       const input = JSON.stringify(part.input === undefined ? null : part.input, null, 2);
-      chunks.push(`<details class="tools"><summary>Tool · ${escapeHtml(part.name)}</summary><pre><code>${escapeHtml(input)}</code></pre></details>`);
+      chunks.push(`<details class="tools"><summary>Tool · ${escapeHtml(part.name)}</summary><pre><code class="language-json">${highlightCode(input, 'json') || escapeHtml(input)}</code></pre></details>`);
     } else if (part.kind === 'tool_result' && wantsToolActivity(opts)) {
       chunks.push(`<details class="tools"><summary>Tool result${part.id ? ` (${escapeHtml(part.id)})` : ''}</summary><pre><code>${escapeHtml(part.text)}</code></pre></details>`);
     } else if (part.kind === 'search_results' && wantsToolActivity(opts)) {
@@ -962,9 +974,11 @@ function convertTaskToHtml(session, opts = {}) {
   const contents = [];
   let exchange = 0;
 
-  if (session.prompt) {
+  // A task fired by a schedule has no typed prompt, so the title stands in as
+  // the heading rather than the document having none.
+  if (session.prompt || (session.turns || []).length) {
     exchange++;
-    const { heading, rest } = splitPrompt(session.prompt);
+    const { heading, rest } = splitPrompt(session.prompt || session.title || 'Session');
     contents.push({ id: 'x1', heading });
     const longHeading = !rest && heading.length > PROMPT_CLAMP;
     parts.push(`<h2 class="prompt${longHeading ? ' clamped' : ''}" id="x1"><span class="n">1</span>${escapeHtml(heading)}</h2>`);
@@ -1007,6 +1021,7 @@ function convertTaskToHtml(session, opts = {}) {
     <p class="byline"><span>${escapeHtml(formatStamp(meta.created))}</span>${meta.model ? `<span class="model">${escapeHtml(meta.model)}</span>` : ''}${session.scheduled ? '<span>scheduled run</span>' : ''}</p>
   </header>`,
     notice,
+    parts.length ? '' : EMPTY_NOTICE,
     showMetadata ? metadataBlock(meta, opts) : '',
     `<div class="controls">
     <button id="expand-all" type="button">Expand all</button>

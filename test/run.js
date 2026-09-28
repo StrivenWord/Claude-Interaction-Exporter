@@ -253,6 +253,39 @@ test('10b. a conversation with no attachments gains no empty block', (ctx) => {
   assert.ok(!html.includes('>Attached<'));
 });
 
+test('6a. a conversation with no messages says so rather than rendering a blank page', (ctx) => {
+  const data = sampleConversation();
+  data.chat_messages = [];
+  const html = render(ctx, data);
+
+  assert.ok(html.includes('Nothing to show'), 'an empty conversation rendered silently');
+  assert.ok(html.includes('The export succeeded'));
+  assert.ok(!html.includes('id="expand-all"'), 'no controls when there is nothing to expand');
+});
+
+test('6b. a scheduled run with no typed prompt still gets a heading', async (ctx) => {
+  const session = {
+    id: 'cse_3', title: 'Nightly digest', created_at: '2026-09-28T00:00:00Z',
+    updated_at: '2026-09-28T00:05:00Z', prompt: '', scheduled: true,
+    turns: [{ kind: 'message', role: 'assistant', parts: [{ kind: 'text', text: 'Done.' }], text: 'Done.', created_at: '2026-09-28T00:01:00Z' }]
+  };
+
+  const html = (await ctx.renderTaskExport(session, 'html', { includeMetadata: true })).content;
+  assert.ok(/<h2 class="prompt[^"]*" id="x1">/.test(html), 'the document has no heading at all');
+  assert.ok(html.includes('Nightly digest'));
+  assert.ok(html.includes('Done.'));
+});
+
+test('6c. the vendored highlighter covers the languages these conversations use', (ctx) => {
+  // Chosen from the 96-document export rather than guessed: bash and yaml
+  // dominate, and this is a Jekyll and Ruby workspace.
+  for (const language of ['bash', 'yaml', 'ruby', 'liquid', 'markdown', 'json', 'javascript', 'python', 'markup', 'css', 'typescript']) {
+    assert.ok(ctx.Prism.languages[language], `Prism has no grammar for ${language}`);
+  }
+  assert.ok(/class="token /.test(ctx.Prism.highlight('a: 1', ctx.Prism.languages.yaml, 'yaml')));
+  assert.ok(/class="token /.test(ctx.Prism.highlight('def x; end', ctx.Prism.languages.ruby, 'ruby')));
+});
+
 // --- safety ------------------------------------------------------------
 
 test('11. the artifact\'s own markup never becomes live markup in the document', (ctx) => {
