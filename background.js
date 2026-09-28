@@ -1,6 +1,6 @@
 // The content script's files, in load order: utils.js defines the renderers
 // api.js and deliver.js build on, and content.js wires them to a message.
-const CONTENT_SCRIPT_FILES = ['utils.js', 'provenance.js', 'html.js', 'api.js', 'deliver.js', 'content.js'];
+const CONTENT_SCRIPT_FILES = ['utils.js', 'provenance.js', 'html.js', 'bundle.js', 'api.js', 'deliver.js', 'content.js'];
 
 // markdown-it and Prism together are 140KB and only the HTML document needs
 // them, so they are kept out of every claude.ai page load and injected into the

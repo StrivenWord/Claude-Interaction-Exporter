@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Check this archive</title>
+<style>
+:root {
+  --ground: #FBFCFD;
+  --surface: #F2F5F9;
+  --raised: #EAEFF6;
+  --ink: #11161F;
+  --muted: #5C6980;
+  --rule: #DDE3EC;
+  --accent: #1E376C;
+  --ok: #1D6B4F;
+  --bad: #A02A38;
+  --warn: #8A5A0B;
+  --sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, "Cascadia Code", Menlo, Consolas, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground: #0E131B; --surface: #161D28; --raised: #1E2836;
+    --ink: #E8EDF4; --muted: #8C99AE; --rule: #242E3D; --accent: #7FA8DC;
+    --ok: #5FBF96; --bad: #E88793; --warn: #E0A94A;
+  }
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+.page { max-width: 46rem; margin: 0 auto; padding: 3rem 1.5rem 5rem; }
+
+h1 { font-size: 1.6rem; margin: 0 0 0.4rem; font-weight: 600; letter-spacing: -0.01em; }
+.lede { color: var(--muted); margin: 0 0 2rem; max-width: 34rem; }
+
+.label {
+  font-size: 0.6875rem; font-weight: 600; letter-spacing: 0.09em;
+  text-transform: uppercase; color: var(--muted); margin: 0 0 0.75rem;
+}
+
+.panel {
+  background: var(--surface); border: 1px solid var(--rule);
+  border-radius: 6px; padding: 1.25rem 1.5rem; margin-bottom: 1.5rem;
+}
+
+.drop {
+  border: 1.5px dashed var(--rule); border-radius: 8px;
+  padding: 2rem 1.5rem; text-align: center; background: var(--surface);
+  margin-bottom: 1.5rem; transition: border-color 0.15s, background 0.15s;
+}
+.drop.over { border-color: var(--accent); background: var(--raised); }
+.drop p { margin: 0 0 0.75rem; }
+.drop .hint { color: var(--muted); font-size: 0.8125rem; margin: 0.75rem 0 0; }
+
+button, label.file-button {
+  font: inherit; font-size: 0.8125rem; cursor: pointer;
+  background: var(--accent); color: #fff; border: 0;
+  border-radius: 5px; padding: 0.45rem 0.9rem; display: inline-block;
+}
+button.ghost, label.ghost {
+  background: none; color: var(--accent); border: 1px solid var(--rule);
+}
+input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; }
+
+.verdict { display: flex; gap: 0.6rem; align-items: baseline; font-size: 1.05rem; font-weight: 600; margin-bottom: 0.4rem; }
+.verdict.ok { color: var(--ok); }
+.verdict.bad { color: var(--bad); }
+.verdict.warn { color: var(--warn); }
+
+table { border-collapse: collapse; width: 100%; font-size: 0.8125rem; }
+.scroll-x { overflow-x: auto; }
+th, td { text-align: left; padding: 0.35rem 0.6rem; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th { color: var(--muted); font-weight: 600; font-size: 0.75rem; }
+td.mono, .mono { font-family: var(--mono); font-size: 0.76rem; word-break: break-all; }
+.pass { color: var(--ok); font-weight: 600; }
+.fail { color: var(--bad); font-weight: 600; }
+
+dl.record { display: grid; grid-template-columns: auto minmax(0,1fr); gap: 0.3rem 1.25rem; margin: 0; font-size: 0.8125rem; }
+dl.record dt { color: var(--muted); }
+dl.record dd { margin: 0; overflow-wrap: anywhere; }
+
+ol.chain { margin: 0; padding-left: 1.2rem; font-size: 0.8125rem; }
+ol.chain li { margin-bottom: 0.25rem; }
+
+.note { font-size: 0.8125rem; color: var(--muted); }
+.hidden { display: none; }
+footer { margin-top: 3rem; padding-top: 1.25rem; border-top: 1px solid var(--rule); font-size: 0.75rem; color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="page">
+
+<h1>Check this archive</h1>
+<p class="lede">
+  Nothing here touches the network. Everything is computed in this page, from
+  the files you give it.
+</p>
+
+<section class="panel">
+  <p class="label">Is this my file?</p>
+  <p class="note">
+    Drop in a copy of a file you already have. This answers whether it is the
+    one the conversation produced — and if it is an earlier version, which one.
+  </p>
+  <div class="drop" id="file-drop">
+    <p>Drop a file here</p>
+    <label class="file-button ghost">Choose a file<input type="file" id="file-input"></label>
+  </div>
+  <div id="file-result"></div>
+</section>
+
+<section class="panel">
+  <p class="label">Check the whole archive</p>
+  <p class="note">
+    Drop the unzipped folder here. Every file is hashed against the record, and
+    the conversation's own tool calls are replayed to see whether they still
+    produce the artifacts.
+  </p>
+  <div class="drop" id="folder-drop">
+    <p>Drop the unzipped folder here</p>
+    <label class="file-button ghost">Choose a folder<input type="file" id="folder-input" webkitdirectory directory multiple></label>
+    <p class="hint">Your browser may ask permission to read the folder. Nothing leaves this page.</p>
+  </div>
+  <div id="folder-result"></div>
+</section>
+
+<section class="panel hidden" id="record-panel">
+  <p class="label">The record</p>
+  <div id="record-body"></div>
+</section>
+
+<footer>
+  This page recomputes what it checks; it does not take the archive's word for
+  anything. What it can establish is that the artifact and the transcript agree.
+  It cannot establish that the conversation happened — see README.md.
+</footer>
+
+</div>
+
+<script>
+'use strict';
+
+// SHA-256 through WebCrypto where it is available, which is everywhere a file://
+// page counts as a secure context, and through a small implementation where it
+// is not. The verifier must never be the thing that fails.
+async function sha256(bytes) {
+  if (self.crypto && self.crypto.subtle) {
+    try {
+      const digest = await crypto.subtle.digest('SHA-256', bytes);
+      return hex(new Uint8Array(digest));
+    } catch (error) {
+      // fall through
+    }
+  }
+  return sha256Fallback(bytes);
+}
+
+function hex(bytes) {
+  return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+function sha256Fallback(bytes) {
+  const K = [];
+  const H = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];
+  for (let i = 0, n = 2; K.length < 64; n++) {
+    let prime = true;
+    for (let f = 2; f * f <= n; f++) if (n % f === 0) prime = false;
+    if (prime) K.push(Math.floor((Math.cbrt(n) % 1) * 4294967296) | 0);
+  }
+
+  const length = bytes.length;
+  const withPadding = new Uint8Array((((length + 8) >> 6) + 1) << 6);
+  withPadding.set(bytes);
+  withPadding[length] = 0x80;
+  new DataView(withPadding.buffer).setUint32(withPadding.length - 4, length * 8, false);
+
+  const w = new Int32Array(64);
+  const view = new DataView(withPadding.buffer);
+  const h = H.slice();
+
+  for (let offset = 0; offset < withPadding.length; offset += 64) {
+    for (let i = 0; i < 16; i++) w[i] = view.getInt32(offset + i * 4, false);
+    for (let i = 16; i < 64; i++) {
+      const a = w[i - 15], b = w[i - 2];
+      const s0 = ((a >>> 7) | (a << 25)) ^ ((a >>> 18) | (a << 14)) ^ (a >>> 3);
+      const s1 = ((b >>> 17) | (b << 15)) ^ ((b >>> 19) | (b << 13)) ^ (b >>> 10);
+      w[i] = (w[i - 16] + s0 + w[i - 7] + s1) | 0;
+    }
+
+    let [a, b, c, d, e, f, g, hh] = h;
+    for (let i = 0; i < 64; i++) {
+      const S1 = ((e >>> 6) | (e << 26)) ^ ((e >>> 11) | (e << 21)) ^ ((e >>> 25) | (e << 7));
+      const ch = (e & f) ^ (~e & g);
+      const t1 = (hh + S1 + ch + K[i] + w[i]) | 0;
+      const S0 = ((a >>> 2) | (a << 30)) ^ ((a >>> 13) | (a << 19)) ^ ((a >>> 22) | (a << 10));
+      const maj = (a & b) ^ (a & c) ^ (b & c);
+      const t2 = (S0 + maj) | 0;
+      hh = g; g = f; f = e; e = (d + t1) | 0; d = c; c = b; b = a; a = (t1 + t2) | 0;
+    }
+
+    h[0] = (h[0] + a) | 0; h[1] = (h[1] + b) | 0; h[2] = (h[2] + c) | 0; h[3] = (h[3] + d) | 0;
+    h[4] = (h[4] + e) | 0; h[5] = (h[5] + f) | 0; h[6] = (h[6] + g) | 0; h[7] = (h[7] + hh) | 0;
+  }
+
+  return hex(new Uint8Array(new Int32Array(h).buffer)).match(/.{8}/g)
+    .map(word => word.match(/.{2}/g).reverse().join('')).join('');
+}
+
+// The replay, again. It lives here as well as in the extension because this
+// page has to stand alone in a folder with nothing installed — and because a
+// verifier that imported its logic from the thing it checks would be checking
+// nothing.
+function replay(conversation) {
+  const branch = [];
+  const byUuid = new Map((conversation.chat_messages || []).map(m => [m.uuid, m]));
+  let uuid = conversation.current_leaf_message_uuid;
+  while (uuid && byUuid.has(uuid)) {
+    const message = byUuid.get(uuid);
+    branch.unshift(message);
+    uuid = message.parent_message_uuid;
+  }
+
+  const files = new Map();
+  for (const message of branch) {
+    for (const block of message.content || []) {
+      if (block.type !== 'tool_use') continue;
+      const input = block.input || {};
+
+      if (block.name === 'create_file' && input.path) {
+        files.set(input.path, { text: input.file_text || '', steps: [] });
+        files.get(input.path).steps.push({ op: 'create', id: block.id, bytes: utf8(input.file_text || '').length });
+      } else if (block.name === 'str_replace' && input.path && files.has(input.path)) {
+        const file = files.get(input.path);
+        file.text = file.text.replace(input.old_str, input.new_str);
+        file.steps.push({ op: 'replace', id: block.id, bytes: utf8(file.text).length });
+      }
+    }
+  }
+
+  return files;
+}
+
+function utf8(text) { return new TextEncoder().encode(text); }
+
+function basename(path) { return String(path).split('/').pop(); }
+
+// --- state -------------------------------------------------------------
+
+let manifest = null;
+let replayed = null;
+
+async function readFiles(fileList) {
+  const found = new Map();
+  for (const file of fileList) {
+    const path = (file.webkitRelativePath || file.name).split('/').slice(1).join('/') || file.name;
+    found.set(path, new Uint8Array(await file.arrayBuffer()));
+  }
+  return found;
+}
+
+function decode(bytes) { return new TextDecoder().decode(bytes); }
+
+// --- checking one file -------------------------------------------------
+
+async function checkOneFile(file) {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const digest = await sha256(bytes);
+  const target = document.getElementById('file-result');
+
+  if (!manifest) {
+    target.innerHTML = `
+      <div class="verdict warn">Hashed, but nothing to compare against</div>
+      <p class="note">Check the whole archive below first, so this page knows what to expect.</p>
+      <p class="mono">${file.name} · ${bytes.length.toLocaleString()} bytes · sha256 ${digest}</p>`;
+    return;
+  }
+
+  for (const artifact of manifest.artifacts) {
+    if (artifact.sha256 === digest) {
+      target.innerHTML = `
+        <div class="verdict ok">Yes — this is the file the conversation produced</div>
+        <p class="note">It matches <span class="mono">${artifact.name}</span> as the conversation left it.</p>
+        <p class="mono">${bytes.length.toLocaleString()} bytes · sha256 ${digest}</p>`;
+      return;
+    }
+
+    // An earlier version is a useful answer, not a mismatch: a copy taken
+    // before later edits is a real version of this file, not a wrong file.
+    //
+    // Searched from the end because consecutive steps often share their bytes —
+    // publishing does not change a file — and the latest step with these bytes
+    // is the more informative answer about how far the conversation had got.
+    const chain = artifact.chain || [];
+    let step = null;
+    for (let i = chain.length - 1; i >= 0; i--) {
+      if (chain[i].result_sha256 === digest) { step = chain[i]; break; }
+    }
+    if (step) {
+      target.innerHTML = `
+        <div class="verdict ok">Yes — this is an earlier version of that file</div>
+        <p class="note">It matches <span class="mono">${artifact.name}</span> as it stood after step ${step.step} (${step.op}), before the conversation edited it again.</p>
+        <p class="mono">${bytes.length.toLocaleString()} bytes · sha256 ${digest}</p>`;
+      return;
+    }
+  }
+
+  target.innerHTML = `
+    <div class="verdict bad">No — this is not a file this conversation produced</div>
+    <p class="note">Its hash matches nothing in the record, at any version.</p>
+    <p class="mono">${file.name} · ${bytes.length.toLocaleString()} bytes · sha256 ${digest}</p>`;
+}
+
+// --- checking the archive ----------------------------------------------
+
+async function checkArchive(fileList) {
+  const target = document.getElementById('folder-result');
+  target.innerHTML = '<p class="note">Reading…</p>';
+
+  const found = await readFiles(fileList);
+  const manifestBytes = found.get('manifest.json');
+  if (!manifestBytes) {
+    target.innerHTML = '<div class="verdict bad">No manifest.json in that folder</div><p class="note">Drop the folder the archive unzipped to, not a folder containing it.</p>';
+    return;
+  }
+
+  manifest = JSON.parse(decode(manifestBytes));
+  const rows = [];
+  let failures = 0;
+
+  for (const entry of manifest.files) {
+    const bytes = found.get(entry.path);
+    if (!bytes) {
+      rows.push({ path: entry.path, verdict: 'missing', ok: false });
+      failures++;
+      continue;
+    }
+    const digest = await sha256(bytes);
+    const ok = digest === entry.sha256;
+    if (!ok) failures++;
+    rows.push({ path: entry.path, verdict: ok ? 'matches' : 'CHANGED', ok, role: entry.role });
+  }
+
+  // The hashes only say the archive is intact. Replaying the transcript is what
+  // says the artifact belongs to the conversation.
+  const transcript = found.get('transcript/conversation.json');
+  const replayRows = [];
+  if (transcript) {
+    replayed = replay(JSON.parse(decode(transcript)));
+    for (const artifact of manifest.artifacts) {
+      const file = replayed.get(artifact.source_path);
+      if (!file) {
+        replayRows.push({ name: artifact.name, verdict: 'not in the transcript', ok: false });
+        failures++;
+        continue;
+      }
+      const digest = await sha256(utf8(file.text));
+      const ok = digest === artifact.sha256;
+      if (!ok) failures++;
+      replayRows.push({ name: artifact.name, verdict: ok ? 'reproduced exactly' : 'does NOT reproduce', ok, steps: file.steps.length });
+    }
+  } else {
+    failures++;
+  }
+
+  const verdict = failures === 0
+    ? '<div class="verdict ok">Everything checks out</div><p class="note">Every file is unchanged, and replaying the conversation\'s own tool calls reproduces every artifact exactly.</p>'
+    : `<div class="verdict bad">${failures} ${failures === 1 ? 'check failed' : 'checks failed'}</div><p class="note">Something in this archive is not what the record says it should be.</p>`;
+
+  target.innerHTML = verdict + `
+    <div class="scroll-x"><table>
+      <tr><th>Replayed from the transcript</th><th>Result</th></tr>
+      ${replayRows.map(r => `<tr><td class="mono">${r.name}</td><td class="${r.ok ? 'pass' : 'fail'}">${r.verdict}${r.steps ? ` · ${r.steps} steps` : ''}</td></tr>`).join('')}
+    </table></div>
+    <div class="scroll-x"><table>
+      <tr><th>File</th><th>Hash</th></tr>
+      ${rows.map(r => `<tr><td class="mono">${r.path}</td><td class="${r.ok ? 'pass' : 'fail'}">${r.verdict}</td></tr>`).join('')}
+    </table></div>`;
+
+  showRecord();
+}
+
+function showRecord() {
+  if (!manifest) return;
+  const source = manifest.source;
+  const panel = document.getElementById('record-panel');
+  panel.classList.remove('hidden');
+
+  document.getElementById('record-body').innerHTML = `
+    <dl class="record">
+      <dt>Conversation</dt><dd>${escapeText(source.title)}</dd>
+      <dt>Created</dt><dd>${escapeText(source.created_at)}</dd>
+      <dt>Model</dt><dd class="mono">${escapeText(source.model)}${source.model_source === 'inferred' ? ' (inferred)' : ''}</dd>
+      <dt>Messages</dt><dd>${source.message_count}</dd>
+      <dt>Read from</dt><dd class="mono">${escapeText(manifest.capture.endpoint || '')}</dd>
+      <dt>Read at</dt><dd>${escapeText(manifest.capture.fetched_at || '')}</dd>
+    </dl>
+    ${manifest.artifacts.map(artifact => `
+      <p class="label" style="margin-top:1.25rem">${escapeText(artifact.name)}</p>
+      <ol class="chain">
+        ${artifact.chain.map(step => `<li><span class="mono">${step.op}</span> — message ${step.message_index}${step.result_bytes ? `, ${step.result_bytes.toLocaleString()} bytes` : ''}</li>`).join('')}
+      </ol>
+      ${artifact.published ? `<p class="note">Published at <span class="mono">${escapeText(artifact.published.url)}</span>${artifact.published.differs_from_final ? ' — before later edits, so the published page is an earlier version.' : ''}</p>` : ''}
+    `).join('')}`;
+}
+
+function escapeText(value) {
+  return String(value == null ? '' : value)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// --- wiring ------------------------------------------------------------
+
+function dropZone(id, handler) {
+  const zone = document.getElementById(id);
+  zone.addEventListener('dragover', event => { event.preventDefault(); zone.classList.add('over'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('over'));
+  zone.addEventListener('drop', async event => {
+    event.preventDefault();
+    zone.classList.remove('over');
+    await handler(collectFiles(event.dataTransfer));
+  });
+}
+
+function collectFiles(transfer) {
+  return Array.from(transfer.files || []);
+}
+
+dropZone('file-drop', files => files.length && checkOneFile(files[0]));
+dropZone('folder-drop', files => files.length && checkArchive(files));
+
+document.getElementById('file-input').addEventListener('change', event => {
+  if (event.target.files.length) checkOneFile(event.target.files[0]);
+});
+document.getElementById('folder-input').addEventListener('change', event => {
+  if (event.target.files.length) checkArchive(event.target.files);
+});
+</script>
+</body>
+</html>

@@ -65,6 +65,18 @@ function needsMarkdown(format) {
   return format === 'html' || format === 'provenance';
 }
 
+// A provenance bundle ships the API response exactly as it arrived, so it has
+// to be read as text rather than parsed straight into an object.
+function needsRawCapture(format) {
+  return format === 'provenance';
+}
+
+function readConversation(orgId, conversationId, format) {
+  return needsRawCapture(format)
+    ? fetchConversationDetailRaw(orgId, conversationId)
+    : fetchConversationDetail(orgId, conversationId).then(data => ({ data }));
+}
+
 function todayStamp() {
   return new Date().toISOString().split('T')[0];
 }
@@ -75,13 +87,16 @@ function handleExportMessage(request, sender, sendResponse) {
     console.log('Export conversation request received:', request);
 
     Promise.all([
-      fetchConversationDetail(request.orgId, request.conversationId),
-      needsMarkdown(request.format) ? ensureMarkdownSupport() : Promise.resolve()
+      readConversation(request.orgId, request.conversationId, request.format),
+      needsMarkdown(request.format) ? ensureMarkdownSupport() : Promise.resolve(),
+      request.format === 'provenance' ? ensureZipSupport() : Promise.resolve()
     ])
-      .then(async ([data]) => {
+      .then(async ([capture]) => {
+        const data = capture.data;
         applyModel(data);
 
-        const file = renderConversationExport(data, request.format, exportOptionsFrom(request));
+        const file = await renderConversationExport(data, request.format,
+          { ...exportOptionsFrom(request), capture, orgId: request.orgId });
         const filename = await deliverOne(downloadDestination(), file);
 
         console.log('Downloaded', filename);
@@ -112,9 +127,10 @@ function handleExportMessage(request, sender, sendResponse) {
           items: conversations.map(conv => ({ id: conv.uuid, name: conv.name })),
           noun: 'conversations',
           renderItem: async (item) => {
-            const data = await fetchConversationDetail(request.orgId, item.id);
-            applyModel(data);
-            return renderConversationExport(data, request.format, opts);
+            const capture = await readConversation(request.orgId, item.id, request.format);
+            applyModel(capture.data);
+            return renderConversationExport(capture.data, request.format,
+              { ...opts, capture, orgId: request.orgId });
           },
           destination: zipDestination({ archiveName: `claude-conversations-${todayStamp()}.zip` }),
           summary: {
@@ -148,7 +164,7 @@ function handleExportMessage(request, sender, sendResponse) {
       .then(async ([session]) => {
         console.log(`Task log replayed: ${session.events.length} events, ${session.turns.length} turns`);
 
-        const file = renderTaskExport(session, request.format, exportOptionsFrom(request));
+        const file = await renderTaskExport(session, request.format, exportOptionsFrom(request));
         const filename = await deliverOne(downloadDestination(), file);
 
         console.log('Downloaded', filename);

@@ -143,6 +143,7 @@ function replayArtifacts(data) {
 
     if (file.text !== null) {
       step.result_bytes = byteLength(file.text);
+      step.result_text = file.text;
     }
 
     file.chain.push(step);
@@ -201,4 +202,115 @@ function artifactsByMessage(artifacts) {
 // without producing a file.
 function toolCallCount(message) {
   return (message.content || []).filter(block => block.type === 'tool_use').length;
+}
+
+// --- the bundle --------------------------------------------------------
+// A conversation, the files it produced, and enough of a record that someone
+// who was not there can check the two against each other.
+
+var PROVENANCE_VERSION = 1;
+
+async function sha256Hex(text) {
+  const bytes = new TextEncoder().encode(String(text ?? ''));
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('');
+}
+
+// The chain points into the transcript rather than restating it: a step names
+// the message and the tool call to look in. The transcript stays the single
+// source, so the record and the evidence cannot drift apart.
+async function artifactRecord(artifact) {
+  const chain = [];
+  for (const step of artifact.chain) {
+    const { result_text, ...rest } = step;
+    chain.push(result_text === undefined ? rest : { ...rest, result_sha256: await sha256Hex(result_text) });
+  }
+
+  const record = {
+    name: artifact.name,
+    path: artifact.functional_html ? `artifact/${artifact.name}` : null,
+    source_path: artifact.path,
+    media_type: artifact.functional_html ? 'text/html' : 'text/plain',
+    bytes: artifact.bytes,
+    sha256: await sha256Hex(artifact.text),
+    bytes_from: 'replay',
+    producer: 'container-files',
+    functional_html: artifact.functional_html,
+    chain,
+    verification: { method: 'replay', status: artifact.status, warnings: artifact.warnings }
+  };
+
+  if (artifact.published) {
+    record.published = artifact.published;
+  }
+
+  return record;
+}
+
+async function buildProvenanceRecord(data, capture, opts = {}) {
+  const artifacts = replayArtifacts(data);
+  const records = [];
+  for (const artifact of artifacts) {
+    records.push(await artifactRecord(artifact));
+  }
+
+  const branch = getCurrentBranch(data);
+
+  return {
+    provenance_version: PROVENANCE_VERSION,
+    generated_at: new Date().toISOString(),
+    generator: { name: 'Claude Interaction Exporter', version: extensionVersion() },
+
+    source: {
+      platform: data.platform || 'CLAUDE_AI',
+      conversation_id: data.uuid || '',
+      conversation_url: `https://claude.ai/chat/${data.uuid || ''}`,
+      title: data.name || 'Untitled Conversation',
+      created_at: data.created_at || '',
+      updated_at: data.updated_at || '',
+      model: data.model || '',
+      model_source: data.model_source || (data.model ? 'reported' : 'inferred'),
+      branch_leaf_message_uuid: data.current_leaf_message_uuid || '',
+      message_count: branch.length,
+      truncated_messages: branch.filter(message => message.truncated).map(message => message.uuid)
+    },
+
+    capture: {
+      endpoint: capture.url || '',
+      organization_id: opts.orgId || '',
+      fetched_at: capture.fetched_at || '',
+      response_bytes: byteLength(capture.text),
+      response_sha256: await sha256Hex(capture.text)
+    },
+
+    // Everything the exporter or the operator added, kept apart from what the
+    // API returned so the record never passes off an inference as a reading.
+    annotations: {
+      project: opts.project || '',
+      contributor: opts.contributor || '',
+      tags: normalizeTags(opts.tags)
+    },
+
+    artifacts: records,
+    files: [],
+    assurance: {
+      derivation: derivationLevel(records),
+      capture: 'attested',
+      external: 'unchecked',
+      time_anchor: 'none'
+    }
+  };
+}
+
+function derivationLevel(records) {
+  if (!records.length) return 'none';
+  return records.every(record => record.verification.status === 'reconstructed') ? 'proven' : 'partial';
+}
+
+function extensionVersion() {
+  try {
+    return chrome.runtime.getManifest().version;
+  } catch (error) {
+    return '';
+  }
 }

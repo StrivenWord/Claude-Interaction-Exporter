@@ -29,6 +29,7 @@
         "utils.js",
         "provenance.js",
         "html.js",
+        "bundle.js",
         "api.js",
         "deliver.js",
         "content.js"
@@ -51,6 +52,7 @@
     {
       "resources": [
         "browse.html",
+        "verify.html",
         "vendor/markdown-it.min.js",
         "vendor/prism.min.js"
       ],

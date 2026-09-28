@@ -397,7 +397,7 @@ function convertToText(data, includeMetadata, opts = {}) {
 // single-row export and the batch ZIP can't drift apart on filename or MIME.
 // The task equivalent is renderTaskExport; the two stay deliberately
 // symmetrical, including the [YYYY-MM-DD]-[slug] filename in every format.
-function renderConversationExport(data, format, opts = {}) {
+async function renderConversationExport(data, format, opts = {}) {
   const name = data.name || data.uuid;
 
   switch (format) {
@@ -422,6 +422,8 @@ function renderConversationExport(data, format, opts = {}) {
         alternatives: datedFilenameAlternatives(data.created_at, name, data.uuid, 'html'),
         type: 'text/html'
       };
+    case 'provenance':
+      return renderProvenanceBundle(data, opts.capture, opts);
     default:
       return {
         content: JSON.stringify(withExportTags(data, opts.tags), null, 2),
@@ -928,7 +930,7 @@ function taskExportJson(session, tags) {
 }
 
 // The task counterpart to renderConversationExport.
-function renderTaskExport(session, format, opts = {}) {
+async function renderTaskExport(session, format, opts = {}) {
   switch (format) {
     case 'markdown':
       return {

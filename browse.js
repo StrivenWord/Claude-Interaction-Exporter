@@ -745,6 +745,14 @@ function updateStats() {
 // Reading a conversation or a Cowork session is api.js's job; rendering one to
 // a file is utils.js's, and saving it deliver.js's.
 
+// A provenance bundle ships the API response exactly as it arrived, so it has
+// to be read as text rather than parsed straight into an object.
+function readConversation(orgId, conversationId, format) {
+  return format === 'provenance'
+    ? fetchConversationDetailRaw(orgId, conversationId)
+    : fetchConversationDetail(orgId, conversationId).then(data => ({ data }));
+}
+
 // Export single conversation
 async function exportConversation(conversationId, conversationName) {
   const opts = exportOptions();
@@ -752,12 +760,14 @@ async function exportConversation(conversationId, conversationName) {
   try {
     showToast(`Exporting ${conversationName}...`);
 
-    const data = await fetchConversationDetail(orgId, conversationId);
+    const capture = await readConversation(orgId, conversationId, opts.format);
+    const data = capture.data;
 
     // Infer model if null
     applyModel(data);
 
-    await deliverOne(downloadDestination(), renderConversationExport(data, opts.format, opts));
+    await deliverOne(downloadDestination(),
+      await renderConversationExport(data, opts.format, { ...opts, capture, orgId }));
     showToast(`Exported: ${conversationName}`);
 
   } catch (error) {
@@ -774,7 +784,7 @@ async function exportTask(sessionId, sessionTitle) {
     showToast(`Exporting ${sessionTitle}...`);
 
     const session = await fetchCoworkSession(sessionId);
-    await deliverOne(downloadDestination(), renderTaskExport(session, opts.format, opts));
+    await deliverOne(downloadDestination(), await renderTaskExport(session, opts.format, opts));
 
     if (session.complete === false) {
       showToast(`Exported ${session.title}, but the transcript stops early: ${session.truncated_reason}.`, true);
@@ -833,9 +843,9 @@ async function renderInteractionFile(item) {
   const opts = exportOptions();
 
   if (item.type === 'chat') {
-    const data = await fetchConversationDetail(orgId, item.uuid);
-    applyModel(data);
-    return renderConversationExport(data, opts.format, opts);
+    const capture = await readConversation(orgId, item.uuid, opts.format);
+    applyModel(capture.data);
+    return renderConversationExport(capture.data, opts.format, { ...opts, capture, orgId });
   }
 
   const session = await fetchCoworkSession(item.id);
