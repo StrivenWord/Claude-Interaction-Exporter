@@ -278,13 +278,35 @@ test('6b. a scheduled run with no typed prompt still gets a heading', async (ctx
 });
 
 test('6c. the vendored highlighter covers the languages these conversations use', (ctx) => {
-  // Chosen from the 96-document export rather than guessed: bash and yaml
-  // dominate, and this is a Jekyll and Ruby workspace.
-  for (const language of ['bash', 'yaml', 'ruby', 'liquid', 'markdown', 'json', 'javascript', 'python', 'markup', 'css', 'typescript']) {
+  // The first set came from the 96-document export — bash and yaml dominate in
+  // a Jekyll and Ruby workspace. The rest are the ones a development
+  // conversation reaches for often enough to be worth a few hundred bytes.
+  for (const language of [
+    'bash', 'yaml', 'ruby', 'liquid', 'markdown', 'json', 'javascript', 'python', 'markup', 'css', 'typescript',
+    'c', 'cpp', 'csharp', 'java', 'go', 'rust', 'php', 'sql', 'diff', 'docker', 'toml', 'ini', 'makefile', 'git', 'regex'
+  ]) {
     assert.ok(ctx.Prism.languages[language], `Prism has no grammar for ${language}`);
   }
   assert.ok(/class="token /.test(ctx.Prism.highlight('a: 1', ctx.Prism.languages.yaml, 'yaml')));
   assert.ok(/class="token /.test(ctx.Prism.highlight('def x; end', ctx.Prism.languages.ruby, 'ruby')));
+  assert.ok(/class="token /.test(ctx.Prism.highlight('SELECT 1', ctx.Prism.languages.sql, 'sql')));
+});
+
+test('6d. a language with no grammar renders as plain text rather than a guess', (ctx) => {
+  // A document of hello-world programs in 150 languages put 131 unknown
+  // grammars through this. None may throw, and none may be mis-coloured by an
+  // auto-detector we deliberately do not use.
+  const data = sampleConversation();
+  data.chat_messages[1].content[0].text = [
+    '```befunge', '64+"!dlroW olleH">:#,_@', '```', '',
+    '```brainfuck', '++++++++[>++++[>++>+++<<-]>+>+<<<-]', '```', '',
+    '```sql', 'SELECT 1;', '```'
+  ].join('\n');
+
+  const html = render(ctx, data);
+  assert.ok(html.includes('64+&quot;!dlroW olleH&quot;&gt;:#,_@'), 'unknown-language code must survive intact');
+  assert.ok(html.includes('class="language-befunge"'), 'the declared language is still recorded on the element');
+  assert.ok(/class="token /.test(html), 'the known language should still highlight');
 });
 
 // --- safety ------------------------------------------------------------
