@@ -953,6 +953,11 @@ async function renderTaskExport(session, format, opts = {}) {
         alternatives: datedFilenameAlternatives(session.created_at, session.title, session.id, 'html'),
         type: 'text/html'
       };
+    // A session writes files through an event log rather than a message tree,
+    // which the replay does not read yet. Falling through to JSON here would
+    // hand back something that is not the format that was asked for.
+    case 'provenance':
+      return null;
     default:
       return {
         content: JSON.stringify(taskExportJson(session, opts.tags), null, 2),

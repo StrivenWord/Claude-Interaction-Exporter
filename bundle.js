@@ -14,8 +14,17 @@ async function renderProvenanceBundle(data, capture, opts = {}) {
     throw new Error('ZIP support is not loaded on this page.');
   }
 
-  const record = await buildProvenanceRecord(data, capture, opts);
   const artifacts = replayArtifacts(data);
+
+  // A bundle exists to tie a file to the conversation that produced it. Without
+  // a file there is nothing to tie, and an archive whose verifier has nothing to
+  // verify is worse than no archive: it looks like evidence. Returning nothing
+  // lets a batch count this as skipped and a single export say so.
+  if (!artifacts.some(artifact => artifact.functional_html)) {
+    return null;
+  }
+
+  const record = await buildProvenanceRecord(data, capture, opts);
   const name = data.name || data.uuid;
 
   const zip = new JSZip();

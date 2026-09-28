@@ -67,6 +67,18 @@ function needsMarkdown(format) {
 
 // A provenance bundle ships the API response exactly as it arrived, so it has
 // to be read as text rather than parsed straight into an object.
+// Why a chosen format produced nothing, in words that say what to do instead.
+function nothingToBundle(format, kind) {
+  if (format !== 'provenance') {
+    return 'Nothing was written for this interaction.';
+  }
+  return kind === 'task'
+    ? 'Provenance bundles are not available for Cowork sessions yet — a session writes files ' +
+      'through its event log, which the replay does not read. Export it as an HTML page instead.'
+    : 'This conversation produced no files, so a provenance bundle would have nothing to prove. ' +
+      'Export it as an HTML page instead.';
+}
+
 function needsRawCapture(format) {
   return format === 'provenance';
 }
@@ -97,6 +109,12 @@ function handleExportMessage(request, sender, sendResponse) {
 
         const file = await renderConversationExport(data, request.format,
           { ...exportOptionsFrom(request), capture, orgId: request.orgId });
+
+        if (!file) {
+          sendResponse({ success: false, error: nothingToBundle(request.format, 'conversation') });
+          return;
+        }
+
         const filename = await deliverOne(downloadDestination(), file);
 
         console.log('Downloaded', filename);
@@ -165,6 +183,12 @@ function handleExportMessage(request, sender, sendResponse) {
         console.log(`Task log replayed: ${session.events.length} events, ${session.turns.length} turns`);
 
         const file = await renderTaskExport(session, request.format, exportOptionsFrom(request));
+
+        if (!file) {
+          sendResponse({ success: false, error: nothingToBundle(request.format, 'task') });
+          return;
+        }
+
         const filename = await deliverOne(downloadDestination(), file);
 
         console.log('Downloaded', filename);

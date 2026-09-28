@@ -26,7 +26,8 @@ const SCRIPTS = [
   'utils.js',
   'provenance.js',
   'html.js',
-  'bundle.js'
+  'bundle.js',
+  'deliver.js'
 ];
 
 // Enough of an extension page for the renderers to run in: the browser globals
@@ -614,6 +615,50 @@ test('37. Prism never highlights the page it is loaded into', (ctx) => {
   // sweep has to be off before the library initialises.
   assert.strictEqual(ctx.Prism.manual, true, 'Prism would highlight the host page');
   assert.strictEqual(ctx.Prism.disableWorkerMessageHandler, true);
+});
+
+test('38. a conversation that produced nothing yields no bundle', async (ctx) => {
+  const capture = sampleCapture();
+  // Strip the tool calls: a real conversation that only talked.
+  for (const message of capture.data.chat_messages) {
+    message.content = (message.content || []).filter(block => block.type === 'text');
+  }
+  capture.text = JSON.stringify(capture.data);
+  ctx.applyModel(capture.data);
+
+  const file = await ctx.renderProvenanceBundle(capture.data, capture, { orgId: 'ORG' });
+  assert.strictEqual(file, null, 'an archive with nothing to verify still looks like evidence');
+});
+
+test('39. a Cowork session is skipped rather than handed back as JSON', async (ctx) => {
+  const session = {
+    id: 'cse_4', title: 'Nightly digest', created_at: '2026-09-28T00:00:00Z',
+    updated_at: '2026-09-28T00:05:00Z', prompt: 'Go', turns: []
+  };
+
+  // The trap: `default:` in the dispatcher returns JSON, so an unhandled format
+  // silently produces a file that is not the one that was asked for.
+  assert.strictEqual(await ctx.renderTaskExport(session, 'provenance', {}), null);
+  assert.strictEqual((await ctx.renderTaskExport(session, 'json', {})).type, 'application/json');
+  assert.strictEqual((await ctx.renderTaskExport(session, 'html', {})).type, 'text/html');
+});
+
+test('40. a batch counts a skipped row rather than losing it', async (ctx) => {
+  const kept = [];
+  const result = await ctx.runBatch({
+    items: [{ id: 'a', name: 'Has a file' }, { id: 'b', name: 'Produced nothing' }],
+    noun: 'interactions',
+    renderItem: async (item) => item.id === 'a'
+      ? { filename: 'a.zip', content: 'x', type: 'application/zip' }
+      : null,
+    destination: { async begin() {}, async put(file) { kept.push(file.filename); }, async finish() {} }
+  });
+
+  assert.strictEqual(result.completed, 1);
+  assert.strictEqual(result.skipped, 1);
+  assert.strictEqual(result.failed, 0);
+  assert.deepStrictEqual(kept, ['a.zip']);
+  assert.match(ctx.describeBatch(result, 'interactions'), /1 left out/);
 });
 
 // --- the verifier ------------------------------------------------------
