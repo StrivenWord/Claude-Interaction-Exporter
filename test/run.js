@@ -434,24 +434,41 @@ test('19. no colour is defined only inside a media query, and body paints its ow
   const style = ctx.DOCUMENT_STYLE;
   const root = style.slice(style.indexOf(':root {'), style.indexOf('}', style.indexOf(':root {')));
 
-  const darkBlocks = [
-    /:root:not\(\[data-theme="light"\]\)\s*\{([^}]*)\}/,
-    /:root\[data-theme="dark"\]\s*\{([^}]*)\}/
-  ].map(pattern => {
-    const found = style.match(pattern);
-    assert.ok(found, `missing theme block: ${pattern}`);
-    return found[1];
-  });
+  // The document commits to light: it does not follow a dark system, so there
+  // is no prefers-color-scheme swap to check. Dark survives behind the toggle,
+  // and every token it redefines has to exist on bare :root first.
+  assert.ok(!/prefers-color-scheme/.test(style), 'the document should not follow the system theme');
 
-  for (const block of darkBlocks) {
-    for (const token of [...block.matchAll(/(--[a-z-]+):/g)].map(m => m[1])) {
-      assert.ok(root.includes(`${token}:`), `${token} is defined only in a dark block`);
-    }
+  const dark = style.match(/:root\[data-theme="dark"\]\s*\{([^}]*)\}/);
+  assert.ok(dark, 'the dark palette should still exist for the toggle');
+  for (const token of [...dark[1].matchAll(/(--[a-z-]+):/g)].map(m => m[1])) {
+    assert.ok(root.includes(`${token}:`), `${token} is defined only in a dark block`);
   }
 
-  assert.ok(/body\s*\{[^}]*background:\s*var\(--ground\)/.test(style), 'body must set an explicit background');
+  assert.ok(/body\s*\{[^}]*background:\s*var\(--paper\)/.test(style), 'body must set an explicit background');
   assert.ok(style.includes('prefers-reduced-motion'), 'reduced motion must be respected');
   assert.ok(style.includes('@media print'), 'print styles must exist');
+});
+
+test('19a. the numerals are the largest thing on the page after the title', (ctx) => {
+  // The exchange number is the document's navigation, so it is set at display
+  // size in the margin rather than tucked in as a label.
+  const style = ctx.DOCUMENT_STYLE;
+  const numeral = style.match(/\.prompt \.n \{([^}]*)\}/);
+  assert.ok(numeral, 'no rule for the prompt numeral');
+  const size = Number((numeral[1].match(/font-size:\s*([\d.]+)rem/) || [])[1]);
+  assert.ok(size >= 2, `the numeral is ${size}rem, which is not prominent`);
+  assert.ok(/color:\s*var\(--blue\)/.test(numeral[1]), 'the numeral should carry the accent');
+
+  assert.ok(/\.masthead h1 \{[^}]*color:\s*var\(--blue\)/s.test(style), 'the title should be in the accent');
+  assert.ok(/\.label \{[^}]*color:\s*var\(--blue\)/s.test(style), 'section labels should be in the accent');
+});
+
+test('19b. the document offers a way back to dark without defaulting to it', (ctx) => {
+  const html = render(ctx, sampleConversation());
+  assert.ok(html.includes('id="theme-toggle"'), 'no theme control');
+  const htmlTag = html.match(/<html[^>]*>/)[0];
+  assert.ok(!/data-theme/.test(htmlTag), `the document must open in light, got ${htmlTag}`);
 });
 
 test('20. code is highlighted from the declared language and never guessed at', (ctx) => {
