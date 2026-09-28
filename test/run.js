@@ -230,6 +230,29 @@ test('10. a reply that produced a file says so in its summary', (ctx) => {
   assert.ok(summaries.every(s => /class="excerpt"/.test(s)), 'every reply needs an excerpt');
 });
 
+test('10a. an attached file is named in the document, as Markdown names it', (ctx) => {
+  const data = sampleConversation();
+  data.chat_messages[0].attachments = [{
+    file_name: 'syllabus.pdf', file_size: 20480, file_type: 'application/pdf',
+    extracted_content: 'Week 1: introductions'
+  }];
+
+  const html = render(ctx, data);
+  assert.ok(html.includes('syllabus.pdf'), 'the attachment vanished from the HTML export');
+  assert.ok(html.includes('20.0 KB'));
+  assert.ok(html.includes('Week 1: introductions'), 'extracted text should be kept, behind a disclosure');
+
+  // Whatever Markdown carries, the document has to carry too.
+  const markdown = ctx.convertToMarkdown(data, true, {});
+  assert.ok(markdown.includes('syllabus.pdf'));
+});
+
+test('10b. a conversation with no attachments gains no empty block', (ctx) => {
+  const html = render(ctx, sampleConversation());
+  assert.ok(!html.includes('class="attachments"'));
+  assert.ok(!html.includes('>Attached<'));
+});
+
 // --- safety ------------------------------------------------------------
 
 test('11. the artifact\'s own markup never becomes live markup in the document', (ctx) => {

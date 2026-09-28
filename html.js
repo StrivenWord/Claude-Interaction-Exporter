@@ -180,6 +180,14 @@ a:focus-visible, summary:focus-visible, button:focus-visible {
 .file .detail { font-family: var(--sans); font-size: 0.75rem; color: var(--muted); }
 .file .detail.warn { color: var(--warn); }
 
+.attachments {
+  margin: 0.9rem 0 0;
+  padding-left: var(--spine);
+  max-width: var(--measure);
+}
+.attachments .label { margin-bottom: 0.4rem; }
+.reply .body .attachments { padding-left: 0; }
+
 .controls {
   display: flex;
   gap: 0.5rem;
@@ -631,6 +639,32 @@ function excerptOf(text, limit = 180) {
   return flat.length > limit ? `${flat.slice(0, limit).trimEnd()}…` : flat;
 }
 
+// Files the person attached to a message. The Markdown export lists these, so
+// an HTML export that dropped them carried less than its own transcript did.
+function attachmentsHtml(message) {
+  const items = [...(message.attachments || []), ...(message.files || [])];
+  if (!items.length) return '';
+
+  const rows = items.map(item => {
+    const name = item.file_name || item.name || '(unnamed)';
+    const detail = [
+      item.file_size ? `${(item.file_size / 1024).toFixed(1)} KB` : '',
+      item.file_type || item.mime_type || ''
+    ].filter(Boolean).join(' · ');
+
+    const card = `<div class="file"><span class="name">${escapeHtml(name)}</span>` +
+      (detail ? `<span class="detail">${escapeHtml(detail)}</span>` : '') + '</div>';
+
+    // Extracted text is what Claude actually read, so it belongs in the record —
+    // behind a disclosure, because it is often the length of a document.
+    return item.extracted_content
+      ? card + `<details class="tools"><summary>Extracted text from ${escapeHtml(name)}</summary><pre><code>${escapeHtml(item.extracted_content)}</code></pre></details>`
+      : card;
+  });
+
+  return `<div class="attachments"><p class="label">Attached</p><div class="files">${rows.join('')}</div></div>`;
+}
+
 function toolActivity(message, opts) {
   if (!wantsToolActivity(opts)) return '';
 
@@ -701,6 +735,8 @@ function renderConversationBody(data, opts, artifacts) {
         parts.push(`<div class="prompt-rest${long ? ' clamped' : ''}">${renderBody(rest)}</div>`);
         if (long) parts.push(PROMPT_MORE);
       }
+
+      parts.push(attachmentsHtml(message));
       continue;
     }
 
@@ -715,6 +751,7 @@ function renderConversationBody(data, opts, artifacts) {
 
     parts.push(`<details class="reply"><summary>${summary}</summary>
       <div class="body">
+        ${attachmentsHtml(message)}
         ${thinkingBlocks(message, opts)}
         ${toolActivity(message, opts)}
         ${renderBody(text)}
@@ -722,7 +759,7 @@ function renderConversationBody(data, opts, artifacts) {
     </details>`);
   }
 
-  return { html: parts.join('\n\n'), contents, exchanges: exchange };
+  return { html: parts.filter(Boolean).join('\n\n'), contents, exchanges: exchange };
 }
 
 function contentsList(contents) {
