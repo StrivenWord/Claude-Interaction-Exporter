@@ -48,6 +48,17 @@ var DOCUMENT_STYLE = `
   --measure: 34rem;
   --spine: 5.5rem;
   --gutter: 1.75rem;
+
+  /* Every margin and pad below comes from this scale. Nothing is set by eye. */
+  --s1: 0.25rem;
+  --s2: 0.5rem;
+  --s3: 0.75rem;
+  --s4: 1rem;
+  --s6: 1.5rem;
+  --s8: 2rem;
+  --s12: 3rem;
+  --s16: 4rem;
+  --s24: 6rem;
 }
 
 /* Light by default and under a dark system, because this is a printed page in
@@ -84,7 +95,7 @@ body {
 .page {
   max-width: calc(var(--measure) + var(--spine) + var(--gutter) + 4rem);
   margin: 0 auto;
-  padding: 5rem 2rem 7rem;
+  padding: var(--s16) var(--s8) var(--s24);
 }
 
 /* Nothing is centred and nothing is indented: the left edge does the work. */
@@ -99,12 +110,12 @@ a:focus-visible, summary:focus-visible, button:focus-visible {
 
 /* --- masthead --- */
 
-.masthead { margin-bottom: 3.5rem; }
+.masthead { margin-bottom: var(--s12); }
 .masthead h1 {
   font-family: var(--sans);
   font-size: clamp(2rem, 5.5vw, 2.9rem);
   line-height: 1.04;
-  margin: 0 0 1.1rem;
+  margin: 0 0 var(--s4);
   font-weight: 600;
   letter-spacing: -0.021em;
   color: var(--blue);
@@ -116,7 +127,7 @@ a:focus-visible, summary:focus-visible, button:focus-visible {
   display: block;
   height: 4px;
   background: var(--blue);
-  margin: 1.4rem 0 0.9rem;
+  margin: var(--s6) 0 var(--s3);
 }
 .byline {
   font-family: var(--sans);
@@ -126,7 +137,7 @@ a:focus-visible, summary:focus-visible, button:focus-visible {
   margin: 0;
   display: flex;
   flex-wrap: wrap;
-  gap: 0.4rem 1.4rem;
+  gap: var(--s2) var(--s6);
 }
 .byline .model { font-family: var(--mono); font-size: 0.72rem; color: var(--ink); }
 
@@ -139,20 +150,20 @@ a:focus-visible, summary:focus-visible, button:focus-visible {
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--blue);
-  margin: 0 0 0.9rem;
+  margin: 0 0 var(--s3);
 }
 
 .panel {
   border-top: 1px solid var(--rule);
-  padding: 1.1rem 0 0;
-  margin: 0 0 2.5rem;
+  padding: var(--s4) 0 0;
+  margin: 0 0 var(--s8);
 }
 
 .meta-list {
   margin: 0;
   display: grid;
   grid-template-columns: 9rem minmax(0, 1fr);
-  gap: 0.3rem 0;
+  gap: var(--s1) 0;
   font-family: var(--sans);
   font-size: 0.8125rem;
 }
@@ -172,7 +183,7 @@ a:focus-visible, summary:focus-visible, button:focus-visible {
   counter-increment: toc;
   display: grid;
   grid-template-columns: 2.5rem minmax(0, 1fr);
-  padding: 0.28rem 0;
+  padding: var(--s1) 0;
   border-bottom: 1px solid var(--rule);
 }
 .contents li::before {
@@ -189,25 +200,25 @@ a:focus-visible, summary:focus-visible, button:focus-visible {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 0.3rem 1rem;
-  padding: 0.55rem 0;
+  gap: var(--s1) var(--s4);
+  padding: var(--s2) 0;
   border-bottom: 1px solid var(--rule);
 }
 .file .name { font-family: var(--mono); font-size: 0.82rem; font-weight: 600; }
 .file .detail { font-family: var(--sans); font-size: 0.72rem; color: var(--muted); }
 .file .detail.warn { color: var(--warn); }
 
-.attachments { margin: 1rem 0 0; padding-left: calc(var(--spine) + var(--gutter)); max-width: var(--measure); }
-.attachments .label { margin-bottom: 0.3rem; }
+.attachments { margin: var(--s4) 0 0; padding-left: calc(var(--spine) + var(--gutter)); max-width: var(--measure); }
+.attachments .label { margin-bottom: var(--s1); }
 .reply .body .attachments { padding-left: 0; }
 
 .controls {
   display: flex;
-  gap: 1.25rem;
-  margin: 0 0 3.5rem;
+  gap: var(--s6);
+  margin: 0 0 var(--s12);
   font-family: var(--sans);
   border-top: 1px solid var(--rule);
-  padding-top: 0.8rem;
+  padding-top: var(--s3);
 }
 .controls button {
   font: inherit;
@@ -227,14 +238,14 @@ a:focus-visible, summary:focus-visible, button:focus-visible {
 
 .prompt {
   position: relative;
-  margin: 4rem 0 0;
+  margin: var(--s16) 0 0;
   padding-left: calc(var(--spine) + var(--gutter));
   max-width: calc(var(--measure) + var(--spine) + var(--gutter));
-  font-family: var(--sans);
+  font-family: var(--serif);
   font-size: 1.4rem;
   font-weight: 600;
-  line-height: 1.28;
-  letter-spacing: -0.012em;
+  line-height: 1.32;
+  letter-spacing: -0.006em;
   text-wrap: pretty;
 }
 .prompt:first-of-type { margin-top: 0; }
@@ -265,7 +276,7 @@ a:focus-visible, summary:focus-visible, button:focus-visible {
 }
 
 .prompt-rest {
-  margin: 0.9rem 0 0;
+  margin: var(--s3) 0 0;
   padding-left: calc(var(--spine) + var(--gutter));
   max-width: calc(var(--measure) + var(--spine) + var(--gutter));
 }
@@ -279,7 +290,7 @@ a:focus-visible, summary:focus-visible, button:focus-visible {
 }
 .more {
   display: none;
-  margin: 0.5rem 0 0 calc(var(--spine) + var(--gutter));
+  margin: var(--s2) 0 0 calc(var(--spine) + var(--gutter));
   font-family: var(--sans);
   font-size: 0.6875rem;
   font-weight: 700;
@@ -293,74 +304,85 @@ a:focus-visible, summary:focus-visible, button:focus-visible {
 }
 .clamped + .more { display: block; }
 
+/* Closed is how this document is read, so the shut row is the object that gets
+   the design: a register with fixed columns, so a run of replies forms real
+   verticals down the page rather than a ragged list of grey notes. */
 .reply {
-  margin: 1.1rem 0 0 calc(var(--spine) + var(--gutter));
+  margin: var(--s3) 0 0 calc(var(--spine) + var(--gutter));
   max-width: var(--measure);
   border-top: 1px solid var(--rule);
+  border-left: 2px solid transparent;
+  transition: border-left-color 0.12s ease, background 0.12s ease;
 }
+.reply:hover { border-left-color: var(--blue); background: var(--blue-pale); }
+.reply[open] { border-left-color: var(--blue); }
+
 .reply > summary {
   list-style: none;
   cursor: pointer;
-  display: flex;
+  display: grid;
+  grid-template-columns: var(--s4) auto auto minmax(0, 1fr) auto;
   align-items: baseline;
-  gap: 0.7rem;
-  font-family: var(--sans);
-  font-size: 0.78rem;
-  color: var(--muted);
-  padding: 0.5rem 0;
+  column-gap: var(--s3);
+  padding: var(--s3) var(--s3) var(--s3) var(--s2);
 }
 .reply > summary::-webkit-details-marker { display: none; }
 .reply > summary::before {
   content: "";
-  flex: none;
-  width: 0.38rem;
-  height: 0.38rem;
+  align-self: center;
+  width: 0.4rem;
+  height: 0.4rem;
   border: solid var(--blue);
   border-width: 0 1.5px 1.5px 0;
-  transform: rotate(-45deg) translate(-1px, -1px);
+  transform: rotate(-45deg);
   transition: transform 0.12s ease;
 }
-.reply[open] > summary::before { transform: rotate(45deg) translate(-2px, -2px); }
+.reply[open] > summary::before { transform: rotate(45deg); }
+
 .reply > summary .who {
+  font-family: var(--sans);
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  font-size: 0.6875rem;
+  font-size: 0.625rem;
   color: var(--blue);
-  flex: none;
 }
-.reply > summary .n {
-  font-variant-numeric: tabular-nums;
-  font-weight: 700;
-  color: var(--blue);
-  flex: none;
-}
+
+/* The excerpt is the content of the row, so it is set for reading rather than
+   as a caption: roman, in ink, at nearly body size. */
 .reply > summary .excerpt {
-  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-family: var(--serif);
-  font-style: italic;
-  font-size: 0.85rem;
+  font-size: 0.95rem;
+  color: var(--ink);
 }
-.reply[open] > summary .excerpt { display: none; }
+.reply[open] > summary .excerpt { color: var(--muted); font-style: italic; }
 .badge {
-  flex: none;
   font-family: var(--mono);
-  font-size: 0.68rem;
+  font-size: 0.66rem;
+  letter-spacing: 0.01em;
   color: var(--blue-deep);
   background: var(--blue-pale);
-  padding: 0.12rem 0.4rem;
+  padding: 0.1em var(--s2);
+  white-space: nowrap;
 }
-.reply .body { padding: 0.6rem 0 1.6rem; }
+.reply:hover .badge { background: var(--paper); }
+.reply .body { padding: var(--s2) var(--s3) var(--s8) var(--s3); }
 .reply .body > *:first-child { margin-top: 0; }
 .reply .body > *:last-child { margin-bottom: 0; }
 
-.stamp { font-family: var(--sans); font-size: 0.72rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.stamp {
+  font-family: var(--sans);
+  font-size: 0.7rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+}
 
-.tools { margin: 1.1rem 0; border-left: 2px solid var(--rule); padding-left: 0.9rem; }
+.tools { margin: var(--s4) 0; border-left: 2px solid var(--rule); padding-left: var(--s3); }
 .tools > summary {
   cursor: pointer;
   font-family: var(--sans);
@@ -373,53 +395,53 @@ a:focus-visible, summary:focus-visible, button:focus-visible {
 .tool {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.25rem 0.7rem;
+  gap: var(--s1) var(--s3);
   font-family: var(--mono);
   font-size: 0.73rem;
   color: var(--muted);
-  padding: 0.28rem 0;
+  padding: var(--s1) 0;
 }
 .tool .op { color: var(--ink); font-weight: 600; }
 
-p { margin: 0 0 1.05rem; max-width: var(--measure); }
+p { margin: 0 0 var(--s4); max-width: var(--measure); }
 h1, h2, h3, h4 { text-wrap: balance; }
 .body h1, .body h2, .body h3 {
   font-family: var(--sans);
   font-size: 0.95rem;
   font-weight: 700;
   letter-spacing: 0.02em;
-  margin: 1.7rem 0 0.5rem;
+  margin: var(--s6) 0 var(--s2);
 }
-ul, ol { max-width: var(--measure); padding-left: 1.2rem; }
-li { margin-bottom: 0.25rem; }
+ul, ol { max-width: var(--measure); padding-left: var(--s6); }
+li { margin-bottom: var(--s1); }
 blockquote {
-  margin: 1.1rem 0;
-  padding-left: 1rem;
+  margin: var(--s4) 0;
+  padding-left: var(--s4);
   border-left: 2px solid var(--blue);
   color: var(--muted);
 }
-hr { border: 0; border-top: 1px solid var(--rule); margin: 2.2rem 0; }
+hr { border: 0; border-top: 1px solid var(--rule); margin: var(--s8) 0; }
 
 code {
   font-family: var(--mono);
   font-size: 0.82em;
   background: var(--panel);
-  padding: 0.08em 0.28em;
+  padding: 0.08em 0.3em;
 }
 pre {
   background: var(--panel);
   border-left: 2px solid var(--rule);
-  padding: 0.9rem 1rem;
+  padding: var(--s3) var(--s4);
   overflow-x: auto;
   font-size: 0.78rem;
   line-height: 1.5;
-  margin: 1.1rem 0;
+  margin: var(--s4) 0;
 }
 pre code { background: none; padding: 0; font-size: inherit; }
 
-table { border-collapse: collapse; font-size: 0.85rem; margin: 1.1rem 0; }
+table { border-collapse: collapse; font-size: 0.85rem; margin: var(--s4) 0; }
 .scroll-x { overflow-x: auto; max-width: 100%; }
-th, td { border-bottom: 1px solid var(--rule); padding: 0.35rem 1.2rem 0.35rem 0; text-align: left; }
+th, td { border-bottom: 1px solid var(--rule); padding: var(--s1) var(--s6) var(--s1) 0; text-align: left; }
 th {
   font-family: var(--sans);
   font-size: 0.7rem;
@@ -441,9 +463,9 @@ img { max-width: 100%; height: auto; }
 .token.entity, .token.url { color: var(--blue); }
 
 .colophon {
-  margin-top: 6rem;
+  margin-top: var(--s24);
   border-top: 4px solid var(--blue);
-  padding-top: 1rem;
+  padding-top: var(--s4);
   font-family: var(--sans);
   font-size: 0.72rem;
   letter-spacing: 0.02em;
@@ -453,7 +475,7 @@ img { max-width: 100%; height: auto; }
 
 @media (max-width: 46rem) {
   :root { --spine: 2.6rem; --gutter: 1rem; }
-  .page { padding: 2.75rem 1.15rem 4rem; }
+  .page { padding: var(--s12) var(--s4) var(--s16); }
   .prompt { font-size: 1.2rem; }
   .prompt .n { font-size: 1.7rem; top: -0.06em; }
   .reply { margin-left: 0; }
@@ -800,12 +822,11 @@ function renderConversationBody(data, opts, artifacts) {
 
     const stamp = showMetadata ? `<time class="stamp" datetime="${escapeHtml(message.created_at || '')}">${escapeHtml(formatClock(message.created_at))}</time>` : '';
     const summary = [
-      exchange ? `<span class="n">${exchange}</span>` : '',
       '<span class="who">Claude</span>',
-      stamp,
+      stamp || '<span class="stamp"></span>',
       `<span class="excerpt">${escapeHtml(excerptOf(text))}</span>`,
-      badgeFor(message, produced)
-    ].filter(Boolean).join('');
+      badgeFor(message, produced) || '<span class="badge-empty"></span>'
+    ].join('');
 
     parts.push(`<details class="reply"><summary>${summary}</summary>
       <div class="body">
@@ -1067,10 +1088,10 @@ function convertTaskToHtml(session, opts = {}) {
 
     const summary = [
       `<span class="who">${escapeHtml(who)}</span>`,
-      stamp,
+      stamp || '<span class="stamp"></span>',
       `<span class="excerpt">${escapeHtml(excerptOf(turn.text))}</span>`,
-      tools ? `<span class="badge">${tools} tool ${tools === 1 ? 'call' : 'calls'}</span>` : ''
-    ].filter(Boolean).join('');
+      tools ? `<span class="badge">${tools} tool ${tools === 1 ? 'call' : 'calls'}</span>` : '<span class="badge-empty"></span>'
+    ].join('');
 
     parts.push(`<details class="reply"><summary>${summary}</summary>
       <div class="body">${coworkPartsHtml(turn.parts, opts)}</div>

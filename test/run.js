@@ -471,6 +471,62 @@ test('19b. the document offers a way back to dark without defaulting to it', (ct
   assert.ok(!/data-theme/.test(htmlTag), `the document must open in light, got ${htmlTag}`);
 });
 
+test('19c. every margin and pad comes from the spacing scale', (ctx) => {
+  // A page feels loose for reasons nobody can name when its spacing is set by
+  // eye. Fixing a unit and staying on it is the cheapest discipline there is.
+  const style = ctx.DOCUMENT_STYLE;
+  const offScale = [...style.matchAll(
+    /(?:^|\n)\s*(?:margin|padding|gap|column-gap|row-gap)[a-z-]*:\s*[^;]*?[\d.]+rem[^;]*;/g
+  )].map(m => m[0].trim());
+
+  assert.deepStrictEqual(offScale, [], `spacing set by eye: ${offScale.join(' | ')}`);
+  for (const step of ['--s1', '--s2', '--s4', '--s8', '--s16']) {
+    assert.ok(style.includes(`${step}:`), `the scale is missing ${step}`);
+  }
+});
+
+test('19d. the closed row is designed, because it is the view people read', (ctx) => {
+  const style = ctx.DOCUMENT_STYLE;
+  const summary = style.match(/\.reply > summary \{([^}]*)\}/)[1];
+  const excerpt = style.match(/\.reply > summary \.excerpt \{([^}]*)\}/)[1];
+
+  // Fixed columns, so a run of replies forms verticals rather than a ragged list.
+  assert.ok(/display:\s*grid/.test(summary), 'the row should be a grid, not a flex ribbon');
+  assert.ok(/grid-template-columns/.test(summary), 'the row needs real columns');
+
+  // The excerpt is the content of the row and must not be set as a caption.
+  assert.ok(/font-family:\s*var\(--serif\)/.test(excerpt), 'the excerpt should be set for reading');
+  assert.ok(/color:\s*var\(--ink\)/.test(excerpt), 'the excerpt should be in ink, not grey');
+  assert.ok(!/font-style:\s*italic/.test(excerpt), 'a closed row is content, not an aside');
+
+  assert.ok(/\.reply\[open\][^{]*\{[^}]*border-left-color:\s*var\(--blue\)/.test(style),
+    'an open row should be marked');
+
+  // A register only reads as one if every row has the same cells. A missing
+  // timestamp or badge would otherwise shift everything after it.
+  // minmax(0, 1fr) carries a space of its own, so collapse what is inside
+  // brackets before counting tracks.
+  const columns = (summary.match(/grid-template-columns:\s*([^;]+);/) || [])[1]
+    .replace(/\([^)]*\)/g, '()').trim().split(/\s+/).length;
+  for (const opts of [{ includeMetadata: true }, { includeMetadata: false }]) {
+    const rows = [...render(ctx, sampleConversation(), opts)
+      .matchAll(/<details class="reply"><summary>(.*?)<\/summary>/gs)].map(m => m[1]);
+    assert.ok(rows.length, 'no rows to check');
+    const counts = new Set(rows.map(row => (row.match(/<(?:span|time)[^>]*>/g) || []).length));
+    assert.strictEqual(counts.size, 1, `rows have differing cell counts: ${[...counts]}`);
+    assert.strictEqual([...counts][0] + 1, columns, 'cells do not fill the declared columns');
+  }
+});
+
+test('19e. what was said is set in serif; the apparatus around it is not', (ctx) => {
+  const style = ctx.DOCUMENT_STYLE;
+  const prompt = style.match(/\.prompt \{([^}]*)\}/)[1];
+  const title = style.match(/\.masthead h1 \{([^}]*)\}/)[1];
+
+  assert.ok(/font-family:\s*var\(--serif\)/.test(prompt), 'a prompt is speech, not a label');
+  assert.ok(/font-family:\s*var\(--sans\)/.test(title), 'the title announces the document');
+});
+
 test('20. code is highlighted from the declared language and never guessed at', (ctx) => {
   const data = sampleConversation();
   data.chat_messages[1].content[0].text = '```html\n<title>Hello</title>\n```\n\n```wat\nnot a language\n```';
