@@ -52,11 +52,20 @@ function artifactOperations(data) {
     for (const block of message.content || []) {
       if (block.type !== 'tool_use') continue;
       const op = normalizeArtifactOp(block);
-      if (!op || !op.path) continue;
-      op.message_uuid = message.uuid;
-      op.message_index = message.index;
-      op.truncated = Boolean(message.truncated);
-      ops.push(op);
+      if (!op) continue;
+
+      // present_files can hand over several files at once, and taking only the
+      // first was quietly dropping the rest from the record.
+      const paths = op.paths && op.paths.length ? op.paths : (op.path ? [op.path] : []);
+      for (const path of paths) {
+        ops.push({
+          ...op,
+          path,
+          message_uuid: message.uuid,
+          message_index: message.index,
+          truncated: Boolean(message.truncated)
+        });
+      }
     }
   }
 
@@ -167,6 +176,11 @@ function replayArtifacts(data) {
         file.text !== null && file.published.published_bytes !== byteLength(file.text);
     }
 
+    if (file.text === null) {
+      file.status = 'not-reconstructible';
+      file.warnings.push('the transcript names this file but never writes it, so its bytes are not here');
+    }
+
     file.bytes = file.text === null ? 0 : byteLength(file.text);
     file.functional_html = isFunctionalHtml(file.path, file.text);
     file.produced_by_message = file.chain.length ? file.chain[file.chain.length - 1].message_uuid : null;
@@ -228,11 +242,11 @@ async function artifactRecord(artifact) {
 
   const record = {
     name: artifact.name,
-    path: artifact.status === 'reconstructed' ? `artifact/${artifact.name}` : null,
+    path: artifact.bundle_path || null,
     source_path: artifact.path,
     media_type: mediaTypeFor(artifact.name),
-    bytes: artifact.bytes,
-    sha256: await sha256Hex(artifact.text),
+    bytes: artifact.text === null ? null : artifact.bytes,
+    sha256: artifact.text === null ? null : await sha256Hex(artifact.text),
     bytes_from: 'replay',
     producer: 'container-files',
     functional_html: artifact.functional_html,
@@ -247,8 +261,8 @@ async function artifactRecord(artifact) {
   return record;
 }
 
-async function buildProvenanceRecord(data, capture, opts = {}) {
-  const artifacts = replayArtifacts(data);
+async function buildProvenanceRecord(data, capture, opts = {}, replayed) {
+  const artifacts = replayed || replayArtifacts(data);
   const records = [];
   for (const artifact of artifacts) {
     records.push(await artifactRecord(artifact));

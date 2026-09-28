@@ -809,8 +809,8 @@ function filesSection(artifacts, opts) {
 }
 
 function artifactHref(file, opts) {
-  if (opts.artifactLinks === 'relative' && file.status === 'reconstructed') {
-    return `artifact/${file.name}`;
+  if (opts.artifactLinks === 'relative' && file.bundle_path) {
+    return file.bundle_path;
   }
   return file.published ? file.published.url : '';
 }
@@ -887,7 +887,7 @@ function colophon(meta, opts, counts) {
 function convertToHtml(data, opts = {}) {
   const meta = documentMetadata(data, opts);
   const showMetadata = opts.includeMetadata !== false;
-  const artifacts = replayArtifacts(data);
+  const artifacts = opts.artifacts || replayArtifacts(data);
   const conversation = renderConversationBody(data, opts, artifacts);
 
   const empty = !conversation.html.trim();

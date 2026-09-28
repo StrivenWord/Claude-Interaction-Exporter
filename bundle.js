@@ -24,21 +24,48 @@ async function renderProvenanceBundle(data, capture, opts = {}) {
     return null;
   }
 
-  const record = await buildProvenanceRecord(data, capture, opts);
   const name = data.name || data.uuid;
 
   const zip = new JSZip();
   const files = [];
+  const taken = new Set();
 
   async function put(path, content, role) {
     zip.file(path, content);
     files.push({ path, sha256: await sha256Hex(content), bytes: byteLength(content), role });
   }
 
+  // Disambiguate by where the file came from before falling back to a number,
+  // since a parent directory says something and a suffix does not.
+  function claimArtifactPath(artifact) {
+    const parts = String(artifact.path || '').split('/').filter(Boolean);
+    const parent = parts.length > 1 ? parts[parts.length - 2] : '';
+    const candidates = [`artifact/${artifact.name}`];
+    if (parent) candidates.push(`artifact/${parent}/${artifact.name}`);
+
+    for (const candidate of candidates) {
+      if (!taken.has(candidate)) { taken.add(candidate); return candidate; }
+    }
+
+    const dot = artifact.name.lastIndexOf('.');
+    const stem = dot > 0 ? artifact.name.slice(0, dot) : artifact.name;
+    const extension = dot > 0 ? artifact.name.slice(dot) : '';
+    for (let n = 2; ; n++) {
+      const candidate = `artifact/${stem}-${n}${extension}`;
+      if (!taken.has(candidate)) { taken.add(candidate); return candidate; }
+    }
+  }
+
+  for (const artifact of artifacts) {
+    if (artifact.status === 'reconstructed') artifact.bundle_path = claimArtifactPath(artifact);
+  }
+
+  const record = await buildProvenanceRecord(data, capture, opts, artifacts);
+
   // The document is the thing to open, so it sits at the top level and links to
   // the artifacts as siblings. Inside a bundle it keeps the identifiers a
   // standalone export withholds: here they are the evidence.
-  const documentOpts = { ...opts, bundled: true, artifactLinks: 'relative' };
+  const documentOpts = { ...opts, bundled: true, artifactLinks: 'relative', artifacts };
   await put('conversation.html', convertToHtml(data, documentOpts), 'derived');
 
   // The response exactly as it arrived. Everything else in the archive is
@@ -52,7 +79,7 @@ async function renderProvenanceBundle(data, capture, opts = {}) {
   // listed them without carrying them would be describing work it withheld.
   for (const artifact of artifacts) {
     if (artifact.status !== 'reconstructed') continue;
-    await put(`artifact/${artifact.name}`, artifact.text, 'artifact');
+    await put(artifact.bundle_path, artifact.text, 'artifact');
 
     // A file published before later edits is a different file from the one the
     // conversation ended with, and both are worth keeping.
@@ -60,7 +87,11 @@ async function renderProvenanceBundle(data, capture, opts = {}) {
       const stem = artifact.name.replace(/\.[^.]+$/, '');
       const extension = (artifact.name.match(/\.[^.]+$/) || [''])[0];
       const step = artifact.chain[artifact.published.published_at_step];
-      await put(`artifact/versions/${stem}.published${extension}`, step.result_text, 'artifact');
+      // Kept under versions/ rather than beside the artifact: it is the same
+      // file at an earlier point, not a second file.
+      const target = `artifact/versions/${stem}.published${extension}`;
+      taken.add(target);
+      await put(target, step.result_text, 'artifact');
     }
   }
 
@@ -99,10 +130,15 @@ function bundleReadme(record) {
   const proven = record.assurance.derivation === 'proven';
 
   const files = artifacts.map(artifact => {
-    const lines = [`### ${artifact.name}`, '',
-      artifact.path ? `- In this archive at \`${artifact.path}\`` : '- **Not carried here** — only the record of it is kept, because the transcript does not contain enough to reproduce it.',
-      `- ${artifact.bytes.toLocaleString()} bytes`,
-      `- SHA-256 \`${artifact.sha256}\``];
+    const lines = artifact.path
+      ? [`### ${artifact.name}`, '',
+         `- In this archive at \`${artifact.path}\``,
+         `- ${artifact.bytes.toLocaleString()} bytes`,
+         `- SHA-256 \`${artifact.sha256}\``]
+      : [`### ${artifact.name}`, '',
+         '- **Not carried here.** The conversation names this file but never writes its',
+         '  contents — it was made by a command whose output the transcript does not',
+         '  record — so there is nothing to reproduce and nothing to check it against.'];
     if (artifact.published) {
       lines.push(`- Published at ${artifact.published.url}`);
       if (artifact.published.differs_from_final) {

@@ -701,6 +701,67 @@ test('41. every file the replay reproduced is carried, not just the HTML ones', 
   assert.strictEqual(types['halebopp.html'], 'text/html');
 });
 
+test('42. two files with the same name are both carried', async (ctx) => {
+  // From the real export: a runbook written once in a scratch directory and
+  // again in the output tree. One target path meant the second replaced the
+  // first while the record went on describing two.
+  const capture = sampleCapture();
+  const message = capture.data.chat_messages.find(m => m.index === 7);
+  const create = message.content.find(c => c.type === 'tool_use' && c.name === 'create_file');
+  for (const [path, text] of [
+    ['/home/claude/work/out/RUNBOOK.md', 'scratch copy'],
+    ['/mnt/user-data/outputs/staging/RUNBOOK.md', 'the real one, longer']
+  ]) {
+    message.content.push({ ...create, id: `toolu_${path}`, input: { path, file_text: text } });
+  }
+  capture.text = JSON.stringify(capture.data);
+  ctx.applyModel(capture.data);
+
+  const file = await ctx.renderProvenanceBundle(capture.data, capture, { orgId: 'ORG' });
+  const zip = await ctx.JSZip.loadAsync(Buffer.from(await file.content.arrayBuffer()).toString('base64'), { base64: true });
+  const manifest = JSON.parse(Buffer.from(await zip.files['manifest.json'].async('base64'), 'base64').toString('utf8'));
+
+  const runbooks = manifest.artifacts.filter(a => a.name === 'RUNBOOK.md');
+  assert.strictEqual(runbooks.length, 2);
+  assert.notStrictEqual(runbooks[0].path, runbooks[1].path, 'both were written to one path');
+
+  for (const artifact of runbooks) {
+    const carried = Buffer.from(await zip.files[artifact.path].async('base64'), 'base64').toString('utf8');
+    assert.strictEqual(sha256(Buffer.from(carried, 'utf8')), artifact.sha256, `${artifact.path} is not its own bytes`);
+  }
+  assert.strictEqual(new Set(manifest.files.map(f => f.path)).size, manifest.files.length, 'a path is listed twice');
+});
+
+test('43. a file the transcript names but never writes is not passed off as proven', async (ctx) => {
+  // present_files can name a path written by a shell command, so the transcript
+  // records that it exists without containing it. Shipping an empty file with
+  // the hash of nothing would present an absence as a reconstructed artifact.
+  const capture = sampleCapture();
+  const message = capture.data.chat_messages.find(m => m.index === 9);
+  const present = message.content.find(c => c.type === 'tool_use' && c.name === 'present_files');
+  present.input.filepaths = ['/mnt/user-data/outputs/halebopp.html', '/mnt/user-data/outputs/INDEX.md'];
+  capture.text = JSON.stringify(capture.data);
+  ctx.applyModel(capture.data);
+
+  const replayed = ctx.replayArtifacts(capture.data);
+  const index = replayed.find(a => a.name === 'INDEX.md');
+  assert.strictEqual(index.status, 'not-reconstructible');
+
+  const file = await ctx.renderProvenanceBundle(capture.data, capture, { orgId: 'ORG' });
+  const zip = await ctx.JSZip.loadAsync(Buffer.from(await file.content.arrayBuffer()).toString('base64'), { base64: true });
+  const names = Object.keys(zip.files);
+  const manifest = JSON.parse(Buffer.from(await zip.files['manifest.json'].async('base64'), 'base64').toString('utf8'));
+  const record = manifest.artifacts.find(a => a.name === 'INDEX.md');
+
+  assert.strictEqual(record.path, null, 'an absent file was given a path');
+  assert.strictEqual(record.sha256, null, 'the hash of nothing was recorded as the artifact hash');
+  assert.ok(!names.includes('artifact/INDEX.md'), 'an empty file was shipped');
+  assert.strictEqual(manifest.assurance.derivation, 'partial', 'derivation should not read as proven');
+
+  const readme = Buffer.from(await zip.files['README.md'].async('base64'), 'base64').toString('utf8');
+  assert.ok(readme.includes('Not carried here'), 'the readme should say the file is absent');
+});
+
 // --- the verifier ------------------------------------------------------
 
 // verify.html carries its own copy of the replay, because it has to work in a
