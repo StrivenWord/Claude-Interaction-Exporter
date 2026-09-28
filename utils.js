@@ -397,7 +397,7 @@ function convertToText(data, includeMetadata, opts = {}) {
 // single-row export and the batch ZIP can't drift apart on filename or MIME.
 // The task equivalent is renderTaskExport; the two stay deliberately
 // symmetrical, including the [YYYY-MM-DD]-[slug] filename in every format.
-function renderConversationExport(data, format, opts = {}) {
+async function renderConversationExport(data, format, opts = {}) {
   const name = data.name || data.uuid;
 
   switch (format) {
@@ -415,6 +415,15 @@ function renderConversationExport(data, format, opts = {}) {
         alternatives: datedFilenameAlternatives(data.created_at, name, data.uuid, 'txt'),
         type: 'text/plain'
       };
+    case 'html':
+      return {
+        content: convertToHtml(data, opts),
+        filename: buildDatedFilename(data.created_at, name, 'html'),
+        alternatives: datedFilenameAlternatives(data.created_at, name, data.uuid, 'html'),
+        type: 'text/html'
+      };
+    case 'provenance':
+      return renderProvenanceBundle(data, opts.capture, opts);
     default:
       return {
         content: JSON.stringify(withExportTags(data, opts.tags), null, 2),
@@ -921,7 +930,15 @@ function taskExportJson(session, tags) {
 }
 
 // The task counterpart to renderConversationExport.
-function renderTaskExport(session, format, opts = {}) {
+// Whether a kind of interaction can produce a format at all, asked before it is
+// read. A Cowork session costs a replay of its whole event log to fetch, which
+// is a great deal of waiting to discover that nothing will come of it.
+function formatSupports(kind, format) {
+  if (format !== 'provenance') return true;
+  return kind === 'chat';
+}
+
+async function renderTaskExport(session, format, opts = {}) {
   switch (format) {
     case 'markdown':
       return {
@@ -937,6 +954,18 @@ function renderTaskExport(session, format, opts = {}) {
         alternatives: datedFilenameAlternatives(session.created_at, session.title, session.id, 'txt'),
         type: 'text/plain'
       };
+    case 'html':
+      return {
+        content: convertTaskToHtml(session, opts),
+        filename: buildDatedFilename(session.created_at, session.title, 'html'),
+        alternatives: datedFilenameAlternatives(session.created_at, session.title, session.id, 'html'),
+        type: 'text/html'
+      };
+    // A session writes files through an event log rather than a message tree,
+    // which the replay does not read yet. Falling through to JSON here would
+    // hand back something that is not the format that was asked for.
+    case 'provenance':
+      return null;
     default:
       return {
         content: JSON.stringify(taskExportJson(session, opts.tags), null, 2),

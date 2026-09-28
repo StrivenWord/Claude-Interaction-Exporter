@@ -36,11 +36,54 @@ function fetchConversationList(orgId) {
   return fetchConversationsJson(`${CONVERSATIONS_API}/${orgId}/chat_conversations`, 'conversations');
 }
 
-// One conversation's full message tree, with tool blocks rendered.
-function fetchConversationDetail(orgId, conversationId) {
-  const url = `${CONVERSATIONS_API}/${orgId}/chat_conversations/${conversationId}` +
+function conversationDetailUrl(orgId, conversationId) {
+  return `${CONVERSATIONS_API}/${orgId}/chat_conversations/${conversationId}` +
     '?tree=True&rendering_mode=messages&render_all_tools=true';
-  return fetchConversationsJson(url, 'conversation');
+}
+
+// One conversation's full message tree, with tool blocks rendered, and the
+// bytes it arrived as.
+//
+// A provenance bundle hashes and ships the response exactly as received, which
+// has to happen before anything touches it: applyModel writes model_source and
+// replaces a null model with a guess, and the export UI's tags are spliced in
+// later still. Those are the exporter's inferences, and a file offered as
+// evidence cannot quietly contain them.
+async function fetchConversationDetailRaw(orgId, conversationId) {
+  const url = conversationDetailUrl(orgId, conversationId);
+  const response = await fetch(url, { credentials: 'include', headers: { 'Accept': 'application/json' } });
+
+  if (!response.ok) {
+    const error = new Error(`Failed to fetch conversation: ${response.status}`);
+    error.status = response.status;
+    throw error;
+  }
+
+  const text = await response.text();
+  return { text, data: JSON.parse(text), url, fetched_at: new Date().toISOString() };
+}
+
+function fetchConversationDetail(orgId, conversationId) {
+  return fetchConversationsJson(conversationDetailUrl(orgId, conversationId), 'conversation');
+}
+
+// The bytes claude.ai serves for a published artifact.
+//
+// This is not the artifact's source file: publishing wraps the page in a
+// document skeleton, and in a conversation that kept editing after publishing
+// it is an earlier version besides. So what comes back is recorded as evidence
+// about the published page and never compared against the final hash. A
+// failure here is ordinary — the artifact may be gone, or the session stale —
+// and degrades to the replay without troubling the export.
+async function fetchPublishedArtifact(url) {
+  try {
+    const response = await fetch(url, { credentials: 'include' });
+    if (!response.ok) return { ok: false, reason: `HTTP ${response.status}` };
+    const text = await response.text();
+    return { ok: true, text, bytes: new TextEncoder().encode(text).length, fetched_at: new Date().toISOString() };
+  } catch (error) {
+    return { ok: false, reason: error.message };
+  }
 }
 
 // --- Cowork sessions (scheduled tasks) --------------------------------

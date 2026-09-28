@@ -41,6 +41,54 @@ function ensureZipSupport() {
   });
 }
 
+// The HTML document is rendered with markdown-it and Prism, which the service
+// worker injects the first time a format asks for them.
+function ensureMarkdownSupport() {
+  if (typeof markdownit !== 'undefined') {
+    return Promise.resolve();
+  }
+
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage({ action: 'ensureMarkdownSupport' }, (response) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+      } else if (!response || !response.success) {
+        reject(new Error((response && response.error) || 'Could not load Markdown support.'));
+      } else {
+        resolve();
+      }
+    });
+  });
+}
+
+function needsMarkdown(format) {
+  return format === 'html' || format === 'provenance';
+}
+
+// A provenance bundle ships the API response exactly as it arrived, so it has
+// to be read as text rather than parsed straight into an object.
+// Why a chosen format produced nothing, in words that say what to do instead.
+function nothingToBundle(format, kind) {
+  if (format !== 'provenance') {
+    return 'Nothing was written for this interaction.';
+  }
+  return kind === 'task'
+    ? 'Provenance bundles are not available for Cowork sessions yet — a session writes files ' +
+      'through its event log, which the replay does not read. Export it as an HTML page instead.'
+    : 'This conversation produced no files, so a provenance bundle would have nothing to prove. ' +
+      'Export it as an HTML page instead.';
+}
+
+function needsRawCapture(format) {
+  return format === 'provenance';
+}
+
+function readConversation(orgId, conversationId, format) {
+  return needsRawCapture(format)
+    ? fetchConversationDetailRaw(orgId, conversationId)
+    : fetchConversationDetail(orgId, conversationId).then(data => ({ data }));
+}
+
 function todayStamp() {
   return new Date().toISOString().split('T')[0];
 }
@@ -50,11 +98,23 @@ function handleExportMessage(request, sender, sendResponse) {
   if (request.action === 'exportConversation') {
     console.log('Export conversation request received:', request);
 
-    fetchConversationDetail(request.orgId, request.conversationId)
-      .then(async data => {
+    Promise.all([
+      readConversation(request.orgId, request.conversationId, request.format),
+      needsMarkdown(request.format) ? ensureMarkdownSupport() : Promise.resolve(),
+      request.format === 'provenance' ? ensureZipSupport() : Promise.resolve()
+    ])
+      .then(async ([capture]) => {
+        const data = capture.data;
         applyModel(data);
 
-        const file = renderConversationExport(data, request.format, exportOptionsFrom(request));
+        const file = await renderConversationExport(data, request.format,
+          { ...exportOptionsFrom(request), capture, orgId: request.orgId });
+
+        if (!file) {
+          sendResponse({ success: false, error: nothingToBundle(request.format, 'conversation') });
+          return;
+        }
+
         const filename = await deliverOne(downloadDestination(), file);
 
         console.log('Downloaded', filename);
@@ -71,7 +131,11 @@ function handleExportMessage(request, sender, sendResponse) {
   if (request.action === 'exportAllConversations') {
     console.log('Export all conversations request received:', request);
 
-    Promise.all([fetchConversationList(request.orgId), ensureZipSupport()])
+    Promise.all([
+      fetchConversationList(request.orgId),
+      ensureZipSupport(),
+      needsMarkdown(request.format) ? ensureMarkdownSupport() : Promise.resolve()
+    ])
       .then(async ([conversations]) => {
         console.log(`Fetched ${conversations.length} conversations`);
 
@@ -81,9 +145,10 @@ function handleExportMessage(request, sender, sendResponse) {
           items: conversations.map(conv => ({ id: conv.uuid, name: conv.name })),
           noun: 'conversations',
           renderItem: async (item) => {
-            const data = await fetchConversationDetail(request.orgId, item.id);
-            applyModel(data);
-            return renderConversationExport(data, request.format, opts);
+            const capture = await readConversation(request.orgId, item.id, request.format);
+            applyModel(capture.data);
+            return renderConversationExport(capture.data, request.format,
+              { ...opts, capture, orgId: request.orgId });
           },
           destination: zipDestination({ archiveName: `claude-conversations-${todayStamp()}.zip` }),
           summary: {
@@ -110,11 +175,25 @@ function handleExportMessage(request, sender, sendResponse) {
   if (request.action === 'exportTask') {
     console.log('Export task request received:', request);
 
-    fetchCoworkSession(request.sessionId)
-      .then(async session => {
+    if (!formatSupports('task', request.format)) {
+      sendResponse({ success: false, error: nothingToBundle(request.format, 'task') });
+      return true;
+    }
+
+    Promise.all([
+      fetchCoworkSession(request.sessionId),
+      needsMarkdown(request.format) ? ensureMarkdownSupport() : Promise.resolve()
+    ])
+      .then(async ([session]) => {
         console.log(`Task log replayed: ${session.events.length} events, ${session.turns.length} turns`);
 
-        const file = renderTaskExport(session, request.format, exportOptionsFrom(request));
+        const file = await renderTaskExport(session, request.format, exportOptionsFrom(request));
+
+        if (!file) {
+          sendResponse({ success: false, error: nothingToBundle(request.format, 'task') });
+          return;
+        }
+
         const filename = await deliverOne(downloadDestination(), file);
 
         console.log('Downloaded', filename);

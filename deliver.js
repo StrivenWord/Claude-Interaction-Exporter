@@ -92,7 +92,9 @@ function zipDestination({ archiveName, onProgress } = {}) {
 
     async put(file) {
       const filename = claimFilename(taken, file.filename, file.alternatives);
-      zip.file(filename, file.content);
+      // A renderer that already produced an archive says so, so its payload is
+      // stored rather than deflated a second time to no purpose.
+      zip.file(filename, file.content, file.compression ? { compression: file.compression } : undefined);
       return filename;
     },
 
