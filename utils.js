@@ -415,6 +415,13 @@ function renderConversationExport(data, format, opts = {}) {
         alternatives: datedFilenameAlternatives(data.created_at, name, data.uuid, 'txt'),
         type: 'text/plain'
       };
+    case 'html':
+      return {
+        content: convertToHtml(data, opts),
+        filename: buildDatedFilename(data.created_at, name, 'html'),
+        alternatives: datedFilenameAlternatives(data.created_at, name, data.uuid, 'html'),
+        type: 'text/html'
+      };
     default:
       return {
         content: JSON.stringify(withExportTags(data, opts.tags), null, 2),
@@ -936,6 +943,13 @@ function renderTaskExport(session, format, opts = {}) {
         filename: buildDatedFilename(session.created_at, session.title, 'txt'),
         alternatives: datedFilenameAlternatives(session.created_at, session.title, session.id, 'txt'),
         type: 'text/plain'
+      };
+    case 'html':
+      return {
+        content: convertTaskToHtml(session, opts),
+        filename: buildDatedFilename(session.created_at, session.title, 'html'),
+        alternatives: datedFilenameAlternatives(session.created_at, session.title, session.id, 'html'),
+        type: 'text/html'
       };
     default:
       return {

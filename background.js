@@ -1,6 +1,11 @@
 // The content script's files, in load order: utils.js defines the renderers
 // api.js and deliver.js build on, and content.js wires them to a message.
-const CONTENT_SCRIPT_FILES = ['utils.js', 'api.js', 'deliver.js', 'content.js'];
+const CONTENT_SCRIPT_FILES = ['utils.js', 'provenance.js', 'html.js', 'api.js', 'deliver.js', 'content.js'];
+
+// markdown-it and Prism together are 140KB and only the HTML document needs
+// them, so they are kept out of every claude.ai page load and injected into the
+// asking tab when an export actually calls for them.
+const MARKDOWN_FILES = ['vendor/markdown-it.min.js', 'vendor/prism.min.js'];
 
 // A tab left open since before install or update never receives the content
 // script until it is reloaded, so inject into the ones already showing
@@ -33,6 +38,21 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       }, () => {
         sendResponse({ success: !chrome.runtime.lastError, error: chrome.runtime.lastError?.message });
       });
+    });
+    return true;
+  }
+
+  if (request.action === 'ensureMarkdownSupport') {
+    const tabId = sender.tab?.id;
+    if (!tabId) {
+      sendResponse({ success: false, error: 'No tab to load Markdown support into' });
+      return true;
+    }
+    chrome.scripting.executeScript({
+      target: { tabId },
+      files: MARKDOWN_FILES
+    }, () => {
+      sendResponse({ success: !chrome.runtime.lastError, error: chrome.runtime.lastError?.message });
     });
     return true;
   }

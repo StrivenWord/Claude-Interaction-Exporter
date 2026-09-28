@@ -41,6 +41,30 @@ function ensureZipSupport() {
   });
 }
 
+// The HTML document is rendered with markdown-it and Prism, which the service
+// worker injects the first time a format asks for them.
+function ensureMarkdownSupport() {
+  if (typeof markdownit !== 'undefined') {
+    return Promise.resolve();
+  }
+
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage({ action: 'ensureMarkdownSupport' }, (response) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+      } else if (!response || !response.success) {
+        reject(new Error((response && response.error) || 'Could not load Markdown support.'));
+      } else {
+        resolve();
+      }
+    });
+  });
+}
+
+function needsMarkdown(format) {
+  return format === 'html' || format === 'provenance';
+}
+
 function todayStamp() {
   return new Date().toISOString().split('T')[0];
 }
@@ -50,8 +74,11 @@ function handleExportMessage(request, sender, sendResponse) {
   if (request.action === 'exportConversation') {
     console.log('Export conversation request received:', request);
 
-    fetchConversationDetail(request.orgId, request.conversationId)
-      .then(async data => {
+    Promise.all([
+      fetchConversationDetail(request.orgId, request.conversationId),
+      needsMarkdown(request.format) ? ensureMarkdownSupport() : Promise.resolve()
+    ])
+      .then(async ([data]) => {
         applyModel(data);
 
         const file = renderConversationExport(data, request.format, exportOptionsFrom(request));
@@ -71,7 +98,11 @@ function handleExportMessage(request, sender, sendResponse) {
   if (request.action === 'exportAllConversations') {
     console.log('Export all conversations request received:', request);
 
-    Promise.all([fetchConversationList(request.orgId), ensureZipSupport()])
+    Promise.all([
+      fetchConversationList(request.orgId),
+      ensureZipSupport(),
+      needsMarkdown(request.format) ? ensureMarkdownSupport() : Promise.resolve()
+    ])
       .then(async ([conversations]) => {
         console.log(`Fetched ${conversations.length} conversations`);
 
@@ -110,8 +141,11 @@ function handleExportMessage(request, sender, sendResponse) {
   if (request.action === 'exportTask') {
     console.log('Export task request received:', request);
 
-    fetchCoworkSession(request.sessionId)
-      .then(async session => {
+    Promise.all([
+      fetchCoworkSession(request.sessionId),
+      needsMarkdown(request.format) ? ensureMarkdownSupport() : Promise.resolve()
+    ])
+      .then(async ([session]) => {
         console.log(`Task log replayed: ${session.events.length} events, ${session.turns.length} turns`);
 
         const file = renderTaskExport(session, request.format, exportOptionsFrom(request));
