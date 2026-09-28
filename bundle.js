@@ -20,7 +20,7 @@ async function renderProvenanceBundle(data, capture, opts = {}) {
   // a file there is nothing to tie, and an archive whose verifier has nothing to
   // verify is worse than no archive: it looks like evidence. Returning nothing
   // lets a batch count this as skipped and a single export say so.
-  if (!artifacts.some(artifact => artifact.functional_html)) {
+  if (!artifacts.some(artifact => artifact.status === 'reconstructed')) {
     return null;
   }
 
@@ -47,8 +47,11 @@ async function renderProvenanceBundle(data, capture, opts = {}) {
   await put('transcript/conversation.md', convertToMarkdown(data, opts.includeMetadata, opts), 'derived');
   await put('transcript/conversation.txt', convertToText(data, opts.includeMetadata, opts), 'derived');
 
+  // Every file the replay reproduced exactly, whatever its type. A conversation
+  // that wrote nine Markdown files produced nine artifacts, and an archive that
+  // listed them without carrying them would be describing work it withheld.
   for (const artifact of artifacts) {
-    if (!artifact.functional_html) continue;
+    if (artifact.status !== 'reconstructed') continue;
     await put(`artifact/${artifact.name}`, artifact.text, 'artifact');
 
     // A file published before later edits is a different file from the one the
@@ -96,7 +99,10 @@ function bundleReadme(record) {
   const proven = record.assurance.derivation === 'proven';
 
   const files = artifacts.map(artifact => {
-    const lines = [`### ${artifact.name}`, '', `- ${artifact.bytes.toLocaleString()} bytes`, `- SHA-256 \`${artifact.sha256}\``];
+    const lines = [`### ${artifact.name}`, '',
+      artifact.path ? `- In this archive at \`${artifact.path}\`` : '- **Not carried here** — only the record of it is kept, because the transcript does not contain enough to reproduce it.',
+      `- ${artifact.bytes.toLocaleString()} bytes`,
+      `- SHA-256 \`${artifact.sha256}\``];
     if (artifact.published) {
       lines.push(`- Published at ${artifact.published.url}`);
       if (artifact.published.differs_from_final) {

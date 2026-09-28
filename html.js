@@ -809,7 +809,7 @@ function filesSection(artifacts, opts) {
 }
 
 function artifactHref(file, opts) {
-  if (opts.artifactLinks === 'relative' && file.functional_html) {
+  if (opts.artifactLinks === 'relative' && file.status === 'reconstructed') {
     return `artifact/${file.name}`;
   }
   return file.published ? file.published.url : '';

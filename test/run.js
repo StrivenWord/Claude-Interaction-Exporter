@@ -661,6 +661,46 @@ test('40. a batch counts a skipped row rather than losing it', async (ctx) => {
   assert.match(ctx.describeBatch(result, 'interactions'), /1 left out/);
 });
 
+test('41. every file the replay reproduced is carried, not just the HTML ones', async (ctx) => {
+  // Drawn from the real export: a conversation that wrote Markdown, Python and
+  // YAML alongside one HTML page. Listing those in the record and leaving them
+  // out of the archive would describe work the bundle withheld.
+  const capture = sampleCapture();
+  const message = capture.data.chat_messages.find(m => m.index === 7);
+  const create = message.content.find(c => c.type === 'tool_use' && c.name === 'create_file');
+
+  for (const [path, text] of [
+    ['/mnt/user-data/outputs/notes.md', '# Notes\n\nSome prose.'],
+    ['/mnt/user-data/outputs/build.py', 'print("hi")\n'],
+    ['/mnt/user-data/outputs/_config.yml', 'title: Site\n']
+  ]) {
+    message.content.push({ ...create, id: `toolu_${path}`, input: { path, file_text: text } });
+  }
+  capture.text = JSON.stringify(capture.data);
+  ctx.applyModel(capture.data);
+
+  const file = await ctx.renderProvenanceBundle(capture.data, capture, { orgId: 'ORG' });
+  const zip = await ctx.JSZip.loadAsync(Buffer.from(await file.content.arrayBuffer()).toString('base64'), { base64: true });
+  const names = Object.keys(zip.files);
+  const manifest = JSON.parse(Buffer.from(await zip.files['manifest.json'].async('base64'), 'base64').toString('utf8'));
+
+  for (const name of ['halebopp.html', 'notes.md', 'build.py', '_config.yml']) {
+    assert.ok(names.includes(`artifact/${name}`), `${name} was recorded but not carried`);
+  }
+
+  // Nothing may be listed in the record without being present.
+  for (const artifact of manifest.artifacts) {
+    assert.ok(artifact.path, `${artifact.name} has no path`);
+    assert.ok(names.includes(artifact.path), `${artifact.path} listed but missing`);
+  }
+
+  const types = Object.fromEntries(manifest.artifacts.map(a => [a.name, a.media_type]));
+  assert.strictEqual(types['notes.md'], 'text/markdown');
+  assert.strictEqual(types['build.py'], 'text/x-python');
+  assert.strictEqual(types['_config.yml'], 'text/yaml');
+  assert.strictEqual(types['halebopp.html'], 'text/html');
+});
+
 // --- the verifier ------------------------------------------------------
 
 // verify.html carries its own copy of the replay, because it has to work in a

@@ -228,9 +228,9 @@ async function artifactRecord(artifact) {
 
   const record = {
     name: artifact.name,
-    path: artifact.functional_html ? `artifact/${artifact.name}` : null,
+    path: artifact.status === 'reconstructed' ? `artifact/${artifact.name}` : null,
     source_path: artifact.path,
-    media_type: artifact.functional_html ? 'text/html' : 'text/plain',
+    media_type: mediaTypeFor(artifact.name),
     bytes: artifact.bytes,
     sha256: await sha256Hex(artifact.text),
     bytes_from: 'replay',
@@ -300,6 +300,18 @@ async function buildProvenanceRecord(data, capture, opts = {}) {
       time_anchor: 'none'
     }
   };
+}
+
+var MEDIA_TYPES = {
+  html: 'text/html', htm: 'text/html', md: 'text/markdown', markdown: 'text/markdown',
+  txt: 'text/plain', json: 'application/json', yml: 'text/yaml', yaml: 'text/yaml',
+  js: 'text/javascript', css: 'text/css', py: 'text/x-python', rb: 'text/x-ruby',
+  sh: 'text/x-shellscript', csv: 'text/csv', xml: 'text/xml', svg: 'image/svg+xml'
+};
+
+function mediaTypeFor(name) {
+  const extension = String(name || '').split('.').pop().toLowerCase();
+  return MEDIA_TYPES[extension] || 'text/plain';
 }
 
 function derivationLevel(records) {
