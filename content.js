@@ -175,6 +175,11 @@ function handleExportMessage(request, sender, sendResponse) {
   if (request.action === 'exportTask') {
     console.log('Export task request received:', request);
 
+    if (!formatSupports('task', request.format)) {
+      sendResponse({ success: false, error: nothingToBundle(request.format, 'task') });
+      return true;
+    }
+
     Promise.all([
       fetchCoworkSession(request.sessionId),
       needsMarkdown(request.format) ? ensureMarkdownSupport() : Promise.resolve()

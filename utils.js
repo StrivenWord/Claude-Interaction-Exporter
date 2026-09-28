@@ -930,6 +930,14 @@ function taskExportJson(session, tags) {
 }
 
 // The task counterpart to renderConversationExport.
+// Whether a kind of interaction can produce a format at all, asked before it is
+// read. A Cowork session costs a replay of its whole event log to fetch, which
+// is a great deal of waiting to discover that nothing will come of it.
+function formatSupports(kind, format) {
+  if (format !== 'provenance') return true;
+  return kind === 'chat';
+}
+
 async function renderTaskExport(session, format, opts = {}) {
   switch (format) {
     case 'markdown':

@@ -762,6 +762,18 @@ test('43. a file the transcript names but never writes is not passed off as prov
   assert.ok(readme.includes('Not carried here'), 'the readme should say the file is absent');
 });
 
+test('44. a format a kind cannot produce is refused before anything is read', (ctx) => {
+  // Reading a Cowork session means replaying its whole event log, which is slow
+  // and hits the stream endpoints hard. Asking first costs nothing.
+  assert.strictEqual(ctx.formatSupports('task', 'provenance'), false);
+  assert.strictEqual(ctx.formatSupports('chat', 'provenance'), true);
+
+  for (const format of ['json', 'markdown', 'text', 'html']) {
+    assert.strictEqual(ctx.formatSupports('task', format), true, `${format} should work for a task`);
+    assert.strictEqual(ctx.formatSupports('chat', format), true, `${format} should work for a chat`);
+  }
+});
+
 // --- the verifier ------------------------------------------------------
 
 // verify.html carries its own copy of the replay, because it has to work in a

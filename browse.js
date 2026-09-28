@@ -796,6 +796,11 @@ async function exportTask(sessionId, sessionTitle) {
   const opts = exportOptions();
 
   try {
+    if (!formatSupports('task', opts.format)) {
+      showToast(nothingToBundle(opts.format, 'task'), true);
+      return;
+    }
+
     showToast(`Exporting ${sessionTitle}...`);
 
     const session = await fetchCoworkSession(sessionId);
@@ -862,6 +867,10 @@ async function exportSelected() {
 // One interaction row to one file, in whichever format the header selects.
 async function renderInteractionFile(item) {
   const opts = exportOptions();
+
+  if (!formatSupports(item.type, opts.format)) {
+    return null;
+  }
 
   if (item.type === 'chat') {
     const capture = await readConversation(orgId, item.uuid, opts.format);
