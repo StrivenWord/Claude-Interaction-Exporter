@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Claude Interaction Exporter",
   "version": "1.8.0",
-  "version_name": "1.8.0 — 2026-09-28 (exports a conversation as a designed HTML page, with the files it produced)",
+  "version_name": "1.8.0 — 2026-09-28 (two new formats: a conversation as a publishable HTML page, and a provenance bundle delivering an artifact with the chat that produced it)",
   "description": "Export your Claude.ai conversations and scheduled tasks with full message history and frontgraph YAML frontmatter (the frontmatter is the graph)",
   "permissions": [
     "activeTab",
