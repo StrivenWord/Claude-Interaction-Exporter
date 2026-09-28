@@ -5,7 +5,7 @@ const CONTENT_SCRIPT_FILES = ['utils.js', 'provenance.js', 'html.js', 'bundle.js
 // markdown-it and Prism together are 140KB and only the HTML document needs
 // them, so they are kept out of every claude.ai page load and injected into the
 // asking tab when an export actually calls for them.
-const MARKDOWN_FILES = ['vendor/markdown-it.min.js', 'vendor/prism.min.js'];
+const MARKDOWN_FILES = ['vendor/markdown-it.min.js', 'vendor/prism-manual.js', 'vendor/prism.min.js'];
 
 // A tab left open since before install or update never receives the content
 // script until it is reloaded, so inject into the ones already showing

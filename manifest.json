@@ -54,6 +54,7 @@
         "browse.html",
         "verify.html",
         "vendor/markdown-it.min.js",
+        "vendor/prism-manual.js",
         "vendor/prism.min.js"
       ],
       "matches": [

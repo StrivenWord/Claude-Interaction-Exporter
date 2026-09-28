@@ -21,6 +21,7 @@ const RESC = path.join(REPO, '..', 'resc');
 const SCRIPTS = [
   'jszip.min.js',
   'vendor/markdown-it.min.js',
+  'vendor/prism-manual.js',
   'vendor/prism.min.js',
   'utils.js',
   'provenance.js',
@@ -549,6 +550,14 @@ test('32. the bundle is delivered as a stored entry inside a batch archive', asy
   assert.strictEqual(file.type, 'application/zip');
   assert.strictEqual(file.compression, 'STORE');
   assert.match(file.filename, /^2026-09-28-mutual-agreement-provenance\.zip$/);
+});
+
+test('37. Prism never highlights the page it is loaded into', (ctx) => {
+  // Injected into claude.ai, an auto-running Prism would rewrite code blocks in
+  // the conversation on screen. It is only ever called directly, so the page
+  // sweep has to be off before the library initialises.
+  assert.strictEqual(ctx.Prism.manual, true, 'Prism would highlight the host page');
+  assert.strictEqual(ctx.Prism.disableWorkerMessageHandler, true);
 });
 
 // --- the verifier ------------------------------------------------------
